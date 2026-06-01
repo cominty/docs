@@ -54,7 +54,7 @@
     "primary": {
       "type": "button",
       "label": "Go to Cominty",
-      "href": "https://cominty.com"
+      "href": "https://app.cominty.ai"
     }
   },
   "contextual": {
