@@ -1,47 +1,58 @@
 ---
 title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+description: "Make your first call to the Cominty API in a few minutes"
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+The Cominty API is a standard HTTPS/JSON API. This guide takes you from zero to
+your first authenticated request.
 
 ## Prerequisites
 
-Before you begin, you must have:
+Before you begin, you need:
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
+- A **Cominty account**
+- A **Cominty API token** (see the next step)
+
+The base URL for the API is `https://ds.cominty.com`.
 
 ## Get started
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Get your API token">
+    Create an API token from the Cominty dashboard. You'll pass it on every
+    authenticated request in the `x-cominty-token` header.
+
+    Keep it secret — treat it like a password.
 
     ```bash
-    npm install your-package
+    export COMINTY_TOKEN="your-api-token"
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+  <Step title="Check connectivity">
+    Confirm you can reach the API with the public health endpoint (no auth
+    required).
 
     ```bash
-    your-cli init
+    curl https://ds.cominty.com/status
     ```
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+  <Step title="Make your first authenticated call">
+    List the agents in your workspace by sending your token in the
+    `x-cominty-token` header.
 
     ```bash
-    your-cli start
+    curl https://ds.cominty.com/agents \
+      -H "x-cominty-token: $COMINTY_TOKEN"
     ```
+
+    A `200` response with a JSON body means your token works. You're ready to go.
   </Step>
 </Steps>
 
 <Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
-
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+  Explore every endpoint — agents, chat, skills, documents, and more — in the
+  [API Reference](/api-reference). Each page includes a live playground where you
+  can try requests with your own token.
 </Tip>
+
+Need help? Reach out at [hi@cominty.com](mailto:hi@cominty.com).
