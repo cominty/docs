@@ -1,0 +1,54 @@
+---
+title: "API reference"
+description: "The Cominty chat API — the HTTP endpoints behind the Python SDK"
+---
+
+The Cominty API is a standard HTTPS/JSON API for chatting with agents and
+managing conversation threads. These seven endpoints are exactly what the
+[Python SDK](/sdk/overview) calls — use the SDK for the smoothest experience, or
+call them directly.
+
+## Base URL
+
+```text
+https://ds.cominty.com
+```
+
+## Authentication
+
+Send your API token in the `x-cominty-token` header on every request. Create a
+token on the **API keys** page at
+[platform.cominty.ai](https://platform.cominty.ai).
+
+```bash
+curl https://ds.cominty.com/chat \
+  -H "x-cominty-token: $COMINTY_API_KEY"
+```
+
+<Note>
+  Every request is scoped to one end user via `user_id` — sent in the request
+  body (`options.user_id`) for chat calls, or as a query parameter for thread
+  listings. The SDK fills this in for you from the client's configured user.
+</Note>
+
+## Endpoints
+
+| Method & path | Purpose |
+| ------------- | ------- |
+| `POST /chat` | Start a thread and post the first message |
+| `POST /chat/{thread_id}` | Post a follow-up message in a thread |
+| `GET /chat/messages/{message_id}/stream` | Stream an assistant reply's progress (JSONL) |
+| `GET /chat` | List threads |
+| `GET /chat/{thread_id}` | Get a thread with its full message history |
+| `PUT /chat/{thread_id}` | Update a thread (rename, star) |
+| `DELETE /chat/{thread_id}` | Archive a thread |
+
+<Warning>
+  Response shapes differ per endpoint. `POST /chat` returns a full **thread**,
+  but `POST /chat/{id}` returns a bare **message**. `GET /chat/{id}` returns a
+  full thread, but `PUT /chat/{id}` returns a **summary** with no messages. Check
+  each endpoint page for its exact response.
+</Warning>
+
+Each endpoint page below includes a live playground — add your token and try a
+real request.

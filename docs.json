@@ -35,8 +35,36 @@
         ]
       },
       {
+        "tab": "Python SDK",
+        "groups": [
+          {
+            "group": "Python SDK",
+            "pages": [
+              "sdk/overview",
+              "sdk/quickstart",
+              "sdk/reference"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "API Reference",
-        "openapi": "/openapi.json"
+        "groups": [
+          {
+            "group": "API Reference",
+            "openapi": "/openapi.json",
+            "pages": [
+              "api-reference",
+              "POST /chat",
+              "POST /chat/{thread_id}",
+              "GET /chat/messages/{message_id}/stream",
+              "GET /chat",
+              "GET /chat/{thread_id}",
+              "PUT /chat/{thread_id}",
+              "DELETE /chat/{thread_id}"
+            ]
+          }
+        ]
       }
     ]
   },

@@ -7,7 +7,15 @@ this script after every regeneration of `openapi.json`:
 
     python scripts/sanitize_openapi.py
 
-It is idempotent — safe to run repeatedly. It does four things:
+It is idempotent — safe to run repeatedly. It does five things:
+
+0. Prune to the SDK surface
+   The public docs only cover the chat/thread endpoints the Python SDK uses.
+   The generator emits the full internal API (~50 paths, including internal-only
+   ones like /dc/internal/sources/readable). We drop every path except the
+   whitelist in KEEP_PATHS, so the public spec — and the API reference it
+   generates — is exactly the 7 SDK operations. Unused component schemas are
+   left in place; they don't render as pages and pruning $refs is error-prone.
 
 1. `itemSchema` -> `schema`
    The generator emits `itemSchema` (a very new OpenAPI keyword) on streaming
@@ -46,6 +54,21 @@ import sys
 
 SPEC = pathlib.Path(__file__).resolve().parent.parent / "openapi.json"
 
+# The public docs expose only the chat/thread surface the Python SDK uses.
+# These 3 paths hold exactly the 7 SDK operations:
+#   POST /chat                                 -> chat.start
+#   GET  /chat                                 -> threads.list
+#   POST /chat/{thread_id}                     -> chat.send
+#   GET  /chat/{thread_id}                     -> threads.get
+#   PUT  /chat/{thread_id}                     -> threads.update
+#   DELETE /chat/{thread_id}                   -> threads.archive
+#   GET  /chat/messages/{message_id}/stream    -> chat.stream
+KEEP_PATHS = {
+    "/chat",
+    "/chat/{thread_id}",
+    "/chat/messages/{message_id}/stream",
+}
+
 DEFAULT_SERVER = "https://ds.cominty.com"
 # path prefix -> server URL. Most specific match wins.
 HOST_OVERRIDES = {
@@ -63,6 +86,15 @@ SECURITY_SCHEME = {
 }
 # Endpoints that must NOT require auth (override the global requirement).
 PUBLIC_PATHS = {"/status"}
+
+
+def prune_paths(spec):
+    """Drop every path not in KEEP_PATHS. Returns (kept, dropped)."""
+    paths = spec.get("paths") or {}
+    dropped = sorted(p for p in paths if p not in KEEP_PATHS)
+    for p in dropped:
+        del paths[p]
+    return sorted(paths), dropped
 
 
 def fix_item_schema(node):
@@ -129,6 +161,8 @@ def server_for(path):
 def main():
     spec = json.loads(SPEC.read_text())
 
+    kept, dropped = prune_paths(spec)
+
     fixed = fix_item_schema(spec)
 
     spec["servers"] = [{"url": DEFAULT_SERVER}]
@@ -144,6 +178,9 @@ def main():
     SPEC.write_text(json.dumps(spec, indent=2) + "\n")
 
     print(f"sanitized {SPEC.name}")
+    print(f"  pruned to SDK surface: {len(kept)} kept, {len(dropped)} dropped")
+    print(f"    kept    : {kept}")
+    print(f"    dropped : {dropped or '(none)'}")
     print(f"  itemSchema -> schema : {fixed} fixed")
     print(f"  default server       : {DEFAULT_SERVER}")
     print(f"  per-path overrides   : {len(overridden)} -> {overridden or '(none)'}")

@@ -1,58 +1,71 @@
 ---
 title: "Quickstart"
-description: "Make your first call to the Cominty API in a few minutes"
+description: "Go from zero to your first agent response in a few minutes"
 ---
 
-The Cominty API is a standard HTTPS/JSON API. This guide takes you from zero to
-your first authenticated request.
+The fastest way to build on Cominty is the **Python SDK** — an async, fully-typed
+client for the chat API. This guide takes you from install to your first
+streamed agent response.
 
-## Prerequisites
-
-Before you begin, you need:
-
-- A **Cominty account**
-- A **Cominty API token** (see the next step)
-
-The base URL for the API is `https://ds.cominty.com`.
+<Note>
+  Prefer raw HTTP? Every call the SDK makes is a standard HTTPS/JSON request
+  against `https://ds.cominty.com`. Browse them in the
+  [API reference](/api-reference), each with a live playground.
+</Note>
 
 ## Get started
 
 <Steps>
-  <Step title="Get your API token">
-    Create an API token from the Cominty dashboard. You'll pass it on every
-    authenticated request in the `x-cominty-token` header.
+  <Step title="Install the SDK">
+    ```bash
+    pip install cominty-sdk        # or: uv add cominty-sdk
+    ```
 
-    Keep it secret — treat it like a password.
+    Requires Python 3.9+.
+  </Step>
+  <Step title="Get your credentials">
+    From [platform.cominty.ai](https://platform.cominty.ai), grab two things:
+
+    - **API key** — from the **API keys** page.
+    - **User id** — from your avatar → **Profile** (looks like
+      `user_31HPTBuBvX20xlQNAbvxjOxPbKB`).
+
+    Export both so the client picks them up automatically. Treat the API key
+    like a password.
 
     ```bash
-    export COMINTY_TOKEN="your-api-token"
+    export COMINTY_API_KEY="<your API key>"
+    export COMINTY_USER_ID="user_..."
     ```
   </Step>
-  <Step title="Check connectivity">
-    Confirm you can reach the API with the public health endpoint (no auth
-    required).
+  <Step title="Send your first message">
+    Pick an `agent_id` from
+    [platform.cominty.ai/agents](https://platform.cominty.ai/agents) and ask it
+    something.
 
-    ```bash
-    curl https://ds.cominty.com/status
+    ```python
+    import asyncio
+    from cominty_sdk import AsyncCominty
+
+    async def main():
+        async with AsyncCominty() as client:      # reads COMINTY_API_KEY + COMINTY_USER_ID
+            run = await client.chat.start(
+                agent_id="__cominty_agents::agent.chat",
+                message="What is Cominty?",
+            )
+            print(await run.text())               # blocks until the agent finishes
+
+    asyncio.run(main())
     ```
-  </Step>
-  <Step title="Make your first authenticated call">
-    List the agents in your workspace by sending your token in the
-    `x-cominty-token` header.
 
-    ```bash
-    curl https://ds.cominty.com/agents \
-      -H "x-cominty-token: $COMINTY_TOKEN"
-    ```
-
-    A `200` response with a JSON body means your token works. You're ready to go.
+    Printed a response? You're ready to build.
   </Step>
 </Steps>
 
 <Tip>
-  Explore every endpoint — agents, chat, skills, documents, and more — in the
-  [API Reference](/api-reference). Each page includes a live playground where you
-  can try requests with your own token.
+  Next, stream the agent's progress, continue the conversation, and handle
+  errors — see the [SDK quickstart](/sdk/quickstart) for runnable examples, and
+  the [SDK reference](/sdk/reference) for the full surface.
 </Tip>
 
 Need help? Reach out at [hi@cominty.com](mailto:hi@cominty.com).

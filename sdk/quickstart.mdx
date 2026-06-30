@@ -1,0 +1,172 @@
+---
+title: "Quickstart"
+description: "Common tasks with the Cominty Python SDK, each with runnable code"
+---
+
+Every scenario below has a runnable script in the SDK's
+[`examples/`](https://github.com/cominty/python-sdk/tree/main/examples) directory.
+Each snippet assumes you are inside an `AsyncCominty` context and have an
+`AGENT_ID`:
+
+```python
+import asyncio
+from cominty_sdk import AsyncCominty, events
+
+AGENT_ID = "__cominty_agents::agent.chat"
+
+async def main():
+    async with AsyncCominty() as client:          # COMINTY_API_KEY + COMINTY_USER_ID
+        ...  # the snippets below go here
+
+asyncio.run(main())
+```
+
+Run the examples from a checkout of the repo:
+
+```bash
+uv sync --all-extras --dev    # examples render with `rich`
+python examples/01_stream_events.py
+```
+
+<Note>
+  New to the SDK? Read [Overview](/sdk/overview) first for install, auth, and the
+  core concepts (client, resources, runs, tools).
+</Note>
+
+## Stream progress events
+
+Watch the agent work — tool calls, LLM steps, the result — as it happens.
+Iterating a run yields **progress events only**; the finished reply is captured
+for you.
+
+```python
+run = await client.chat.start(agent_id=AGENT_ID, message="Research X and summarize.")
+async for event in run:
+    if isinstance(event, events.ToolCall):
+        print("tool", event.data.name, event.status)
+    elif isinstance(event, events.LlmStep):
+        print("llm ", event.data.description)
+    elif isinstance(event, events.Result):
+        print("cost", event.data.cost.total)
+print(await run.text())
+```
+
+▶ [`examples/01_stream_events.py`](https://github.com/cominty/python-sdk/blob/main/examples/01_stream_events.py)
+
+## Fire and await the answer
+
+No event handling — just the final reply.
+
+```python
+run = await client.chat.start(agent_id=AGENT_ID, message="Give me one fun fact.")
+print(await run.text())            # blocks until done
+reply = await run.result()         # full Message (status, files, ...)
+```
+
+▶ [`examples/02_await_result.py`](https://github.com/cominty/python-sdk/blob/main/examples/02_await_result.py)
+
+## Continue the conversation
+
+`chat.send` posts a follow-up in the same thread; the agent keeps context.
+
+```python
+first = await client.chat.start(agent_id=AGENT_ID, message="Pick a language.")
+await first.text()
+second = await client.chat.send(first.thread.id, agent_id=AGENT_ID,
+                                message="Now show hello-world in it.")
+print(await second.text())
+```
+
+▶ [`examples/03_follow_up.py`](https://github.com/cominty/python-sdk/blob/main/examples/03_follow_up.py)
+
+## Answer the agent's questions
+
+When the agent needs input, it ends its turn with `questions` (a prompt plus
+options) instead of a final answer. Answer with a normal follow-up.
+
+```python
+run = await client.chat.start(agent_id=AGENT_ID, message="Book me a room.")
+await run.text()
+for q in await run.questions():
+    print(q.prompt, q.options)
+reply = await client.chat.send(run.thread.id, agent_id=AGENT_ID, message="Tomorrow 10am")
+print(await reply.text())
+```
+
+▶ [`examples/04_answer_questions.py`](https://github.com/cominty/python-sdk/blob/main/examples/04_answer_questions.py)
+
+## List and search threads
+
+```python
+for t in await client.threads.list(limit=20):
+    print(t.created_at, t.name, t.id)
+await client.threads.list(terms=["invoice"])   # free-text search
+await client.threads.list(limit=10, page=1)     # paginate (zero-based)
+```
+
+▶ [`examples/05_list_threads.py`](https://github.com/cominty/python-sdk/blob/main/examples/05_list_threads.py)
+
+## Manage a thread
+
+```python
+thread = await client.threads.get(thread_id)                          # full history
+await client.threads.update(thread_id, name="Renamed", starred=True)  # partial → ThreadSummary
+await client.threads.archive(thread_id)                               # soft-delete
+```
+
+▶ [`examples/06_manage_thread.py`](https://github.com/cominty/python-sdk/blob/main/examples/06_manage_thread.py)
+
+## Use a custom managed agent
+
+A custom agent — its own model, failover order, and instructions, configured at
+[platform.cominty.ai → Agents](https://platform.cominty.ai/agents) — is just
+another `agent_id`. Pass it to any chat call. This example feeds a jargon-heavy
+incident report to an agent instructed to reply with a clean, non-technical
+**French** executive summary.
+
+```python
+run = await client.chat.start(
+    agent_id=CUSTOM_AGENT_ID,
+    message=TECHNICAL_INPUT,
+    disabled_tools=["web", "company_documents", "mcp:*"],  # pure transformation
+)
+print(await run.text())   # bullet-point French briefing for a C-level reader
+```
+
+▶ [`examples/07_custom_agent.py`](https://github.com/cominty/python-sdk/blob/main/examples/07_custom_agent.py)
+
+## Pull live context from an MCP server
+
+MCP servers connected to an agent on the platform (for example Linear) work with
+**no SDK change** — tools are on by default, and you only disable what you don't
+want. Here the custom agent reads the current Linear sprint and reports it in its
+French C-level voice. Linear tool calls appear in the stream as `ToolCall`
+events.
+
+```python
+run = await client.chat.start(
+    agent_id=CUSTOM_AGENT_ID,
+    message="Using Linear, list the current-sprint tasks and summarize for leadership.",
+    disabled_tools=["web", "company_documents"],  # keep MCP (Linear) on
+)
+print(await run.text())
+```
+
+▶ [`examples/08_mcp_linear.py`](https://github.com/cominty/python-sdk/blob/main/examples/08_mcp_linear.py)
+
+## Handle errors
+
+```python
+from cominty_sdk import RateLimitError, APIError
+
+try:
+    run = await client.chat.start(agent_id=AGENT_ID, message="hi")
+    print(await run.text())
+except RateLimitError as e:
+    print(e)                       # clear, scope-aware message
+    print(e.scope, e.retry_after, e.reset_at)
+except APIError as e:
+    print(e.status_code, e.detail)
+```
+
+See [Exceptions](/sdk/reference#exceptions) for the full hierarchy.

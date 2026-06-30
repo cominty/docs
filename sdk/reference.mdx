@@ -1,0 +1,193 @@
+---
+title: "Reference"
+description: "Resources, run handles, data models, events, and exceptions"
+---
+
+This page documents the SDK's public surface. For task-oriented examples, see the
+[Quickstart](/sdk/quickstart); for the underlying HTTP endpoints, see the
+[API reference](/api-reference).
+
+## Client
+
+```python
+AsyncCominty(
+    *,
+    user_id: str | None = None,    # required (arg or COMINTY_USER_ID); validated locally
+    api_token: str | None = None,  # required (arg or COMINTY_API_KEY)
+    base_url: str | None = None,   # default https://ds.cominty.com (or COMINTY_BASE_URL)
+    timeout: float | None = None,  # seconds, default 60
+)
+```
+
+- `user_id` is mandatory, validated at construction (`^user_[A-Za-z0-9]{20,}$`),
+  and applied to **every** request — resource methods never take it.
+- Use it as an async context manager (`async with`) or call `await client.close()`.
+- Properties: `client.user_id`, `client.base_url`.
+- Sub-resources: `client.chat`, `client.threads`.
+
+See [Configuration](/sdk/overview#configuration) for the full settings table and
+resolution order.
+
+## Resources
+
+### `client.chat`
+
+| Method   | Signature | Returns |
+| -------- | --------- | ------- |
+| `start`  | `start(*, agent_id, message, name=None, file_ids=None, source_ids=None, document_ids=None, disabled_tools=None)` | `StartedChat` |
+| `send`   | `send(thread_id, *, message, agent_id, file_ids=None, source_ids=None, document_ids=None, disabled_tools=None)` | `AssistantRun` |
+| `stream` | `stream(message_id)` | `AssistantRun` (no I/O until consumed) |
+
+- `start` returns a `StartedChat` — a run whose `.thread` is guaranteed present.
+- `send` returns an `AssistantRun` — no `.thread`; you hold the `thread_id`, and
+  `threads.get` fetches the rest. Use it to answer the agent's questions.
+- Invalid arguments raise [`InvalidParams`](#exceptions) **before** any request is
+  sent.
+
+### `client.threads`
+
+Scoped to the client's `user_id` automatically. `thread_id` accepts a `str` or a
+`uuid.UUID`.
+
+| Method    | Signature | Returns |
+| --------- | --------- | ------- |
+| `list`    | `list(*, limit=50, page=0, terms=None)` | `list[ThreadSummary]` |
+| `get`     | `get(thread_id)` | `Thread` (full history) |
+| `update`  | `update(thread_id, *, name=None, starred=None)` | `ThreadSummary` |
+| `archive` | `archive(thread_id)` | `None` |
+
+## The run handle
+
+Returned by `chat.start` (`StartedChat`) and by `chat.send` / `chat.stream`
+(`AssistantRun`). A run is the assistant's in-progress reply. Its stream is
+**single-use** — iterate it **or** await its result (the result is cached either
+way).
+
+| Member | Description |
+| ------ | ----------- |
+| `async for event in run` | yields [progress events](#streamed-events) only; the terminal message is captured internally |
+| `await run.result()` | drains the stream and returns the final `Message` |
+| `await run.text()` | the final reply string (`result().content`) |
+| `await run.questions()` | the agent's clarifying `Question`s, or `[]` |
+| `run.message_id` | the assistant message id (`UUID`) |
+| `run.thread` | the `Thread` (`StartedChat` only; absent on a bare `AssistantRun`) |
+| `async with run:` / `await run.aclose()` | release the stream early |
+
+<Warning>
+  A run raises [`StreamInterrupted`](#exceptions) (carrying `.partial`) if the
+  server shuts down mid-stream.
+</Warning>
+
+## Data models
+
+All models are [Pydantic](https://docs.pydantic.dev/). Response models ignore
+unknown fields, so they are forward-compatible.
+
+<ResponseField name="Thread" type="ThreadSummary + messages">
+  Everything in `ThreadSummary`, plus `messages: list[Message]`.
+</ResponseField>
+
+<ResponseField name="ThreadSummary" type="object">
+  `id: UUID` · `name: str` · `created_at: datetime` · `live: bool` ·
+  `agent: Agent` · `starred: bool` · `project_id: str | None`
+</ResponseField>
+
+<ResponseField name="Message" type="object">
+  `id: UUID` · `thread_id: UUID` · `role: MessageRole` (`user` | `assistant`) ·
+  `content: str` · `questions: list[Question] | None` · `live: bool` ·
+  `status: MessageStatus` (`pending` | `running` | `success` | `failed` |
+  `cancelled`) · `events: list[dict] | None` · `structured_output: dict | None` ·
+  `files: list[ConversationFile]`
+</ResponseField>
+
+<ResponseField name="Question" type="object">
+  `prompt: str` · `options: list[str]`
+</ResponseField>
+
+<ResponseField name="Agent" type="object">
+  `id: str` · `name: str`
+</ResponseField>
+
+<ResponseField name="ConversationFile" type="object">
+  `id` · `name` · `size` · `mimetype` · `origin` (`user` | `agent`) ·
+  `share_links: list[ShareLink]` · `url`
+</ResponseField>
+
+<ResponseField name="ShareLink" type="object">
+  `id` · `created_at` · `last_accessed_at?` · `access_count` · `revoked` ·
+  `expires_at?` · `expired` · `protected` · `url`
+</ResponseField>
+
+## `disabled_tools`
+
+Passed to `chat.start` and `chat.send`. Tools are **on by default**; each entry
+turns one off:
+
+| Value | Meaning |
+| ----- | ------- |
+| `"web"` | disable web search |
+| `"company_documents"` | disable company-document retrieval |
+| `"mcp:<server>"` | disable one MCP server, e.g. `"mcp:slack"` |
+| `"mcp:*"` | disable all MCP servers |
+
+The SDK validates the `mcp:` arm locally and rejects anything else (with
+[`InvalidParams`](#exceptions)) before sending.
+
+## Streamed events
+
+`from cominty_sdk import events`
+
+Every event has `id: str`, `correlation_id: int`, `at: datetime`,
+`status: "running" | "success" | "error"`, and a `name`. Match on the type:
+
+| Class | `name` | Payload (`event.data`) |
+| ----- | ------ | ---------------------- |
+| `WaitingForStart` | `waiting_for_start` | — |
+| `SettingUpSandbox` | `setting_up_sandbox` | — |
+| `UploadingFile` | `uploading_file` | `filename` |
+| `LlmStep` | `llm` | `description`, `model` |
+| `IntermediaryUpdate` | `intermediary_update` | `message` |
+| `ToolCall` | `tool_call` | `name`, `description`, `message?`, `error?` |
+| `Result` | `result` | `reply`, `files`, `questions?`, `metadata?`, `cost` |
+| `UnknownEvent` | *(any new name)* | `data: dict | None` (forward-compatible) |
+
+`Result.data.cost` is a `Cost`: `failed`, `input_tokens`, `cached_tokens`,
+`output_tokens`, `input_cost`, `output_cost`, `total` (all `Decimal`).
+
+## Exceptions
+
+`from cominty_sdk import ...`
+
+```text
+ComintyError
+├── APIError              # HTTP 4xx/5xx — .status_code, .detail, .body, .headers
+│   ├── AuthError         # 401
+│   ├── PermissionError   # 403
+│   ├── NotFoundError     # 404
+│   ├── ConflictError     # 409
+│   ├── RateLimitError    # 429
+│   └── ServerError       # 5xx
+├── APIConnectionError    # network error / timeout (no response)
+├── StreamInterrupted     # server shut down mid-stream — .partial: Message
+├── InvalidParams         # client-side validation failed — .errors: list[InvalidParam]
+└── SDKError              # internal SDK bug
+```
+
+### `RateLimitError`
+
+Turns the terse `429` into a clear, actionable message and exposes:
+
+- `scope` → `"organization"` | `"user"` | `"concurrency"`
+- `retry_after` → seconds (from the `Retry-After` header), or `None`
+- `reset_at` → `datetime` (from `reset_at` / `X-RateLimit-Reset`), or `None`
+
+Example messages:
+
+- *Organization rate limit reached: your organization's total request quota is
+  exhausted. Ask an organization admin to raise your plan's limit. Quota resets
+  at 2026-06-30T00:00:00+00:00.*
+- *User rate limit reached: your user request quota is exhausted. Ask an
+  organization admin to raise your plan's limit.*
+- *Too many concurrent requests: your plan's limit on simultaneous chat sessions
+  is reached. Wait for an in-flight request to finish and retry, or raise the
+  limit.*
