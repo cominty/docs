@@ -10,12 +10,15 @@ this script after every regeneration of `openapi.json`:
 It is idempotent — safe to run repeatedly. It does five things:
 
 0. Prune to the SDK surface
-   The public docs only cover the chat/thread endpoints the Python SDK uses.
-   The generator emits the full internal API (~50 paths, including internal-only
-   ones like /dc/internal/sources/readable). We drop every path except the
-   whitelist in KEEP_PATHS, so the public spec — and the API reference it
-   generates — is exactly the 7 SDK operations. Unused component schemas are
-   left in place; they don't render as pages and pruning $refs is error-prone.
+   The public docs only cover the endpoints the Python SDK uses (chat, threads,
+   memory). The generator emits the full internal API (~50 paths, including
+   internal-only ones like /dc/internal/sources/readable). We drop every path
+   except the whitelist in KEEP_PATHS, so the public spec — and the API
+   reference it generates — is limited to what the SDK exposes. KEEP_PATHS is
+   the single source of truth for that surface; don't restate its size or
+   contents elsewhere (docs, comments) since it changes as the SDK grows.
+   Unused component schemas are left in place; they don't render as pages and
+   pruning $refs is error-prone.
 
 1. `itemSchema` -> `schema`
    The generator emits `itemSchema` (a very new OpenAPI keyword) on streaming
@@ -54,8 +57,8 @@ import sys
 
 SPEC = pathlib.Path(__file__).resolve().parent.parent / "openapi.json"
 
-# The public docs expose only the chat/thread surface the Python SDK uses.
-# These 3 paths hold exactly the 7 SDK operations:
+# The public docs expose only the surface the Python SDK uses. Each path below
+# maps to one or more SDK resource methods:
 #   POST /chat                                 -> chat.start
 #   GET  /chat                                 -> threads.list
 #   POST /chat/{thread_id}                     -> chat.send
@@ -63,10 +66,18 @@ SPEC = pathlib.Path(__file__).resolve().parent.parent / "openapi.json"
 #   PUT  /chat/{thread_id}                     -> threads.update
 #   DELETE /chat/{thread_id}                   -> threads.archive
 #   GET  /chat/messages/{message_id}/stream    -> chat.stream
+#   GET  /memory                               -> memory.list
+#   POST /memory                               -> memory.create
+#   GET  /memory/file                          -> memory.get
+#   PUT  /memory/file                          -> memory.update
+#   DELETE /memory/file                        -> memory.delete
+# Update this set (and the table above) whenever the SDK's endpoint set changes.
 KEEP_PATHS = {
     "/chat",
     "/chat/{thread_id}",
     "/chat/messages/{message_id}/stream",
+    "/memory",
+    "/memory/file",
 }
 
 DEFAULT_SERVER = "https://ds.cominty.com"

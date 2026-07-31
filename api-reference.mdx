@@ -3,10 +3,10 @@ title: "API reference"
 description: "The Cominty chat API — the HTTP endpoints behind the Python SDK"
 ---
 
-The Cominty API is a standard HTTPS/JSON API for chatting with agents and
-managing conversation threads. These seven endpoints are exactly what the
-[Python SDK](/sdk/overview) calls — use the SDK for the smoothest experience, or
-call them directly.
+The Cominty API is a standard HTTPS/JSON API for chatting with agents,
+managing conversation threads, and storing per-user memory files. Every
+endpoint below is called by the [Python SDK](/sdk/overview) — use the SDK for
+the smoothest experience, or call them directly.
 
 ## Base URL
 
@@ -26,9 +26,12 @@ curl https://ds.cominty.com/chat \
 ```
 
 <Note>
-  Every request is scoped to one end user via `user_id` — sent in the request
-  body (`options.user_id`) for chat calls, or as a query parameter for thread
-  listings. The SDK fills this in for you from the client's configured user.
+  Every request is scoped to one end user via `user_id`. Where it's sent
+  varies by endpoint: in the request body (`options.user_id`) for chat calls,
+  as a query parameter for thread and memory listings/lookups — **except**
+  `POST /memory`, which takes it in the JSON body alongside `path`, `purpose`,
+  and `content`. The SDK fills this in for you from the client's configured
+  user, so you never pass it explicitly.
 </Note>
 
 ## Endpoints
@@ -42,12 +45,46 @@ curl https://ds.cominty.com/chat \
 | `GET /chat/{thread_id}` | Get a thread with its full message history |
 | `PUT /chat/{thread_id}` | Update a thread (rename, star) |
 | `DELETE /chat/{thread_id}` | Archive a thread |
+| `GET /memory` | List memory files (summaries — no content) |
+| `POST /memory` | Create a memory file |
+| `GET /memory/file` | Get a memory file, including content |
+| `PUT /memory/file` | Partially update a memory file's content/purpose |
+| `DELETE /memory/file` | Delete a memory file |
 
 <Warning>
   Response shapes differ per endpoint. `POST /chat` returns a full **thread**,
   but `POST /chat/{id}` returns a bare **message**. `GET /chat/{id}` returns a
-  full thread, but `PUT /chat/{id}` returns a **summary** with no messages. Check
-  each endpoint page for its exact response.
+  full thread, but `PUT /chat/{id}` returns a **summary** with no messages.
+  `GET /memory` returns file **summaries** with no `content`; `GET /memory/file`,
+  `POST /memory`, and `PUT /memory/file` all return the full file. Check each
+  endpoint page for its exact response.
+</Warning>
+
+<Warning>
+  `path` (in `POST /memory`'s body, and as a query parameter everywhere else)
+  may have **at most one folder segment** — `"notes/todo.md"` is fine,
+  `"a/b/todo.md"` returns **422** (`"Maximum folder depth is 1"`). `content`
+  may be an empty string — there's no minimum length.
+</Warning>
+
+<Warning>
+  `PUT /memory/file` requires a `version` query parameter — the opaque token
+  from your last read of that file. A stale `version` (the file changed since
+  you read it) returns **409 Conflict**; a malformed one (not a real
+  timestamp) returns **422** instead. Treat `version` as an opaque string:
+  round-trip it unchanged, never parse or compare it.
+</Warning>
+
+<Warning>
+  `PUT /memory/file`'s body accepts `content`/`purpose` as `null`, but sending
+  `null` currently has no effect: the existing value is left untouched (same
+  as omitting the key), the `version` doesn't change either, and the request
+  still returns 200. There is currently no way to clear either field once set.
+</Warning>
+
+<Warning>
+  `DELETE /memory/file` is **not idempotent**: deleting an already-deleted (or
+  never-existing) path returns **404**, not a repeated 204.
 </Warning>
 
 Each endpoint page below includes a live playground — add your token and try a

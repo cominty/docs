@@ -116,6 +116,36 @@ await client.threads.archive(thread_id)                               # soft-del
 
 ▶ [`examples/06_manage_thread.py`](https://github.com/cominty/python-sdk/blob/main/examples/06_manage_thread.py)
 
+## Store and recall a memory file
+
+`client.memory` persists per-user files an agent can read back in a later
+conversation. `update` is partial, and its required `version` guards against
+overwriting a concurrent change — a stale one raises `ConflictError`.
+
+```python
+from cominty_sdk import ConflictError
+
+created = await client.memory.create(
+    path="preferences/tone.md", purpose="writing style", content="Keep it casual.",
+)
+
+summaries = await client.memory.list()          # no content, just metadata
+fetched = await client.memory.get("preferences/tone.md")
+
+updated = await client.memory.update(
+    "preferences/tone.md", version=fetched.version, content="Keep it upbeat.",
+)
+
+try:
+    await client.memory.update("preferences/tone.md", version=fetched.version, content="stale")
+except ConflictError:
+    print("version was stale — re-fetch and retry")
+
+await client.memory.delete("preferences/tone.md")
+```
+
+▶ [`examples/09_memory.py`](https://github.com/cominty/python-sdk/blob/main/examples/09_memory.py)
+
 ## Use a custom managed agent
 
 A custom agent — its own model, failover order, and instructions, configured at
