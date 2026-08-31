@@ -58,10 +58,20 @@
               "POST /chat",
               "POST /chat/{thread_id}",
               "GET /chat/messages/{message_id}/stream",
+              "POST /chat/messages/{message_id}/cancel",
+              "GET /chat/messages/{message_id}/export",
+              "GET /chat/files/upload",
+              "POST /chat/files",
+              "GET /chat/files/{file_pid}",
               "GET /chat",
               "GET /chat/{thread_id}",
               "PUT /chat/{thread_id}",
-              "DELETE /chat/{thread_id}"
+              "DELETE /chat/{thread_id}",
+              "GET /memory",
+              "POST /memory",
+              "GET /memory/file",
+              "PUT /memory/file",
+              "DELETE /memory/file"
             ]
           }
         ]

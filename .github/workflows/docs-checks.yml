@@ -1,0 +1,37 @@
+name: Docs checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Mintlify CLI
+        run: npm install -g mint@4.2.748
+
+      - name: Validate docs build (strict — includes docs.json + openapi.json)
+        run: mint validate
+
+      - name: Check for broken links
+        run: mint broken-links
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check Python code snippets parse cleanly
+        run: python scripts/check_snippets.py
