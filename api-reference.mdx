@@ -3,9 +3,10 @@ title: "API reference"
 description: "The Cominty chat API — the HTTP endpoints behind the Python SDK"
 ---
 
-The Cominty API is a standard HTTPS/JSON API for chatting with agents and
-managing conversation threads. These seven endpoints are exactly what the
-[Python SDK](/sdk/overview) calls — use the SDK for the smoothest experience, or
+The Cominty API is a standard HTTPS/JSON API for chatting with agents,
+managing conversation threads, handling file uploads/downloads and message
+exports, and storing per-user memory files. Every endpoint below is called by
+the [Python SDK](/sdk/overview) — use the SDK for the smoothest experience, or
 call them directly.
 
 ## Base URL
@@ -26,9 +27,12 @@ curl https://ds.cominty.com/chat \
 ```
 
 <Note>
-  Every request is scoped to one end user via `user_id` — sent in the request
-  body (`options.user_id`) for chat calls, or as a query parameter for thread
-  listings. The SDK fills this in for you from the client's configured user.
+  Every request is scoped to one end user via `user_id`. Where it's sent
+  varies by endpoint: in the request body (`options.user_id`) for chat calls,
+  as a query parameter for thread endpoints and every memory endpoint —
+  **except** `POST /memory`, which takes it in the JSON body alongside
+  `path`, `purpose`, and `content`. The SDK fills this in for you from the
+  client's configured user, so you never pass it explicitly.
 </Note>
 
 ## Endpoints
@@ -38,16 +42,82 @@ curl https://ds.cominty.com/chat \
 | `POST /chat` | Start a thread and post the first message |
 | `POST /chat/{thread_id}` | Post a follow-up message in a thread |
 | `GET /chat/messages/{message_id}/stream` | Stream an assistant reply's progress (JSONL) |
+| `POST /chat/messages/{message_id}/cancel` | Cancel an in-flight message |
+| `GET /chat/messages/{message_id}/export` | Export a message as a file (`pdf` or `docx`) |
+| `GET /chat/files/upload` | Get a presigned upload permission for a new file |
+| `POST /chat/files` | Confirm an upload, registering the file |
+| `GET /chat/files/{file_pid}` | Get a presigned download URL for a conversation file |
 | `GET /chat` | List threads |
 | `GET /chat/{thread_id}` | Get a thread with its full message history |
 | `PUT /chat/{thread_id}` | Update a thread (rename, star) |
 | `DELETE /chat/{thread_id}` | Archive a thread |
+| `GET /memory` | List memory files (summaries — no content) |
+| `POST /memory` | Create a memory file |
+| `GET /memory/file` | Get a memory file, including content |
+| `PUT /memory/file` | Partially update a memory file's content/purpose |
+| `DELETE /memory/file` | Delete a memory file |
 
 <Warning>
   Response shapes differ per endpoint. `POST /chat` returns a full **thread**,
   but `POST /chat/{id}` returns a bare **message**. `GET /chat/{id}` returns a
-  full thread, but `PUT /chat/{id}` returns a **summary** with no messages. Check
-  each endpoint page for its exact response.
+  full thread, but `PUT /chat/{id}` returns a **summary** with no messages.
+  `GET /memory` returns file **summaries** with no `content`; `GET /memory/file`,
+  `POST /memory`, and `PUT /memory/file` all return the full file. Check each
+  endpoint page for its exact response.
+</Warning>
+
+<Warning>
+  `path` (in `POST /memory`'s body, and as a query parameter everywhere else)
+  may have **at most one folder segment** — `"notes/todo.md"` is fine,
+  `"a/b/todo.md"` returns **422** (`"Maximum folder depth is 1"`). `content`
+  may be an empty string — there's no minimum length.
+</Warning>
+
+<Warning>
+  `PUT /memory/file` requires a `version` query parameter — the opaque token
+  from your last read of that file. A stale `version` (the file changed since
+  you read it) returns **409 Conflict**; a malformed one (not a real
+  timestamp) returns **422** instead. Treat `version` as an opaque string:
+  round-trip it unchanged, never parse or compare it.
+</Warning>
+
+<Warning>
+  `PUT /memory/file`'s body accepts `content`/`purpose` as `null`, but sending
+  `null` currently has no effect: the existing value is left untouched (same
+  as omitting the key), the `version` doesn't change either, and the request
+  still returns 200. There is currently no way to clear either field once set.
+</Warning>
+
+<Warning>
+  `DELETE /memory/file` is **not idempotent**: deleting an already-deleted (or
+  never-existing) path returns **404**, not a repeated 204.
+</Warning>
+
+<Warning>
+  Uploading a file is a **3-step flow**, not a single call:
+
+  1. `GET /chat/files/upload` — get a presigned upload permission (`url` +
+     `fields`) for your `filename`/`mimetype`.
+  2. Upload the file directly to that `url` (a storage host, not
+     `ds.cominty.com`) as a `multipart/form-data` POST, including `fields` as
+     form fields alongside the file. **Don't send `x-cominty-token` to this
+     URL** — it's a different host and doesn't expect it.
+  3. `POST /chat/files` with the resulting `ETag` (as `etag`) and the `key`
+     from step 1's `fields`, to register the file and get back a
+     `ConversationFile` — its `id` is what feeds `file_ids` on `POST /chat`
+     or `POST /chat/{thread_id}`.
+</Warning>
+
+<Warning>
+  `GET /chat/files/{file_pid}` doesn't return file bytes — it returns a
+  presigned **download URL** as a bare JSON string. Fetch that URL directly
+  (again, no `x-cominty-token` needed there) to get the actual content.
+</Warning>
+
+<Warning>
+  `GET /chat/messages/{message_id}/export` returns the exported file's raw
+  bytes (a PDF or DOCX), not JSON — the response `content-type` shown on this
+  page is a placeholder from the spec, not what you'll actually receive.
 </Warning>
 
 Each endpoint page below includes a live playground — add your token and try a

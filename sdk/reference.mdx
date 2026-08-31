@@ -23,7 +23,7 @@ AsyncCominty(
   and applied to **every** request — resource methods never take it.
 - Use it as an async context manager (`async with`) or call `await client.close()`.
 - Properties: `client.user_id`, `client.base_url`.
-- Sub-resources: `client.chat`, `client.threads`.
+- Sub-resources: `client.chat`, `client.threads`, `client.memory`.
 
 See [Configuration](/sdk/overview#configuration) for the full settings table and
 resolution order.
@@ -37,12 +37,33 @@ resolution order.
 | `start`  | `start(*, agent_id, message, name=None, file_ids=None, source_ids=None, document_ids=None, disabled_tools=None)` | `StartedChat` |
 | `send`   | `send(thread_id, *, message, agent_id, file_ids=None, source_ids=None, document_ids=None, disabled_tools=None)` | `AssistantRun` |
 | `stream` | `stream(message_id)` | `AssistantRun` (no I/O until consumed) |
+| `cancel` | `cancel(message_id)` | `Message` (`status` becomes `cancelled`) |
+| `export` | `export(message_id, *, format)` | `bytes` (raw file content) |
+| `upload_file` | `upload_file(content, *, filename, mimetype)` | `ConversationFile` |
+| `download_file` | `download_file(file_pid)` | `bytes` (raw file content) |
 
 - `start` returns a `StartedChat` — a run whose `.thread` is guaranteed present.
 - `send` returns an `AssistantRun` — no `.thread`; you hold the `thread_id`, and
   `threads.get` fetches the rest. Use it to answer the agent's questions.
 - Invalid arguments raise [`InvalidParams`](#exceptions) **before** any request is
   sent.
+
+<Note>
+  `export`'s `format` is `"pdf"` or `"docx"`. `upload_file`'s `content` is
+  either raw `bytes` or a path (`str`/`pathlib.Path`) to read them from;
+  `filename` is limited to 255 characters and can't contain `/`, checked
+  locally before any request.
+</Note>
+
+<Warning>
+  `upload_file` orchestrates 3 HTTP calls, not one: it requests a presigned
+  upload permission, uploads your content directly to that storage URL (a
+  different host — no Cominty token is sent there), then confirms the upload
+  with Cominty. `download_file` similarly follows a presigned URL to a
+  different host to fetch the bytes. Both are single SDK calls; the
+  multi-step flow only matters if you're calling the raw HTTP endpoints
+  yourself — see the [API reference](/api-reference) for the manual steps.
+</Warning>
 
 ### `client.threads`
 
@@ -55,6 +76,44 @@ Scoped to the client's `user_id` automatically. `thread_id` accepts a `str` or a
 | `get`     | `get(thread_id)` | `Thread` (full history) |
 | `update`  | `update(thread_id, *, name=None, starred=None)` | `ThreadSummary` |
 | `archive` | `archive(thread_id)` | `None` |
+
+### `client.memory`
+
+Scoped to the client's `user_id` automatically.
+
+| Method   | Signature | Returns |
+| -------- | --------- | ------- |
+| `list`   | `list()` | `list[MemoryFileSummaryOut]` (no `content`) |
+| `create` | `create(*, path, purpose, content)` | `MemoryFileOut` |
+| `get`    | `get(path)` | `MemoryFileOut` |
+| `update` | `update(path, *, version, content=..., purpose=...)` | `MemoryFileOut` |
+| `delete` | `delete(path)` | `None` |
+
+<Warning>
+  `path` may have **at most one folder segment** — `"notes/todo.md"` is fine,
+  `"a/b/todo.md"` isn't. This isn't in the OpenAPI spec; the SDK checks it
+  locally (raising [`InvalidParams`](#exceptions) before any request) because
+  the API only enforces it after a round trip, with a 422. `content` may be an
+  empty string — there's no minimum length.
+</Warning>
+
+<Warning>
+  `update` is partial: only the fields you pass are sent. **There is
+  currently no way to clear `content` or `purpose` once set** — the API
+  silently ignores an explicit `null` (200, value unchanged), so the SDK
+  raises [`InvalidParams`](#exceptions) locally for `content=None` or
+  `purpose=None` instead of sending a request that looks like it succeeded
+  but did nothing. `version` is required and must be the value from your last
+  read of the file; a stale one raises [`ConflictError`](#exceptions) (409), a
+  malformed one raises [`APIError`](#exceptions) (422). Treat `version` as an
+  opaque token — round-trip it, never parse or compare it.
+</Warning>
+
+<Warning>
+  `delete` is **not idempotent**: deleting an already-deleted (or
+  never-existing) path raises [`NotFoundError`](#exceptions) (404) rather
+  than succeeding again.
+</Warning>
 
 ## The run handle
 
@@ -116,6 +175,16 @@ unknown fields, so they are forward-compatible.
 <ResponseField name="ShareLink" type="object">
   `id` · `created_at` · `last_accessed_at?` · `access_count` · `revoked` ·
   `expires_at?` · `expired` · `protected` · `url`
+</ResponseField>
+
+<ResponseField name="MemoryFileOut" type="object">
+  Returned by `memory.create`, `memory.get`, and `memory.update`. `path: str` ·
+  `purpose: str` · `content: str` · `created_at: datetime` ·
+  `updated_at: datetime` · `version: str` (opaque — see [`client.memory`](#client-memory))
+</ResponseField>
+
+<ResponseField name="MemoryFileSummaryOut" type="object">
+  Returned by `memory.list`. Everything in `MemoryFileOut` except `content`.
 </ResponseField>
 
 ## `disabled_tools`
