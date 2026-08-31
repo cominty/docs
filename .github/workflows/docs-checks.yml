@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -18,7 +20,7 @@ jobs:
           node-version: "20"
 
       - name: Install Mintlify CLI
-        run: npm install -g mint
+        run: npm install -g mint@4.2.748
 
       - name: Validate docs build (strict — includes docs.json + openapi.json)
         run: mint validate

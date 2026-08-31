@@ -66,6 +66,11 @@ SPEC = pathlib.Path(__file__).resolve().parent.parent / "openapi.json"
 #   PUT  /chat/{thread_id}                     -> threads.update
 #   DELETE /chat/{thread_id}                   -> threads.archive
 #   GET  /chat/messages/{message_id}/stream    -> chat.stream
+#   POST /chat/messages/{message_id}/cancel    -> chat.cancel
+#   GET  /chat/messages/{message_id}/export    -> chat.export
+#   GET  /chat/files/upload                    -> chat.upload_file (step 1/3)
+#   POST /chat/files                           -> chat.upload_file (step 3/3)
+#   GET  /chat/files/{file_pid}                -> chat.download_file
 #   GET  /memory                               -> memory.list
 #   POST /memory                               -> memory.create
 #   GET  /memory/file                          -> memory.get
@@ -76,6 +81,11 @@ KEEP_PATHS = {
     "/chat",
     "/chat/{thread_id}",
     "/chat/messages/{message_id}/stream",
+    "/chat/messages/{message_id}/cancel",
+    "/chat/messages/{message_id}/export",
+    "/chat/files/upload",
+    "/chat/files",
+    "/chat/files/{file_pid}",
     "/memory",
     "/memory/file",
 }

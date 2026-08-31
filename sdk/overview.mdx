@@ -4,9 +4,10 @@ description: "Async, fully-typed Python client for the Cominty chat API"
 ---
 
 The Cominty Python SDK wraps the chat API: start a conversation with an agent,
-stream its progress, continue the thread, manage threads, and store per-user
-memory files an agent can read back later. Everything is scoped to a single
-end user (`user_id`) that you set once on the client.
+stream its progress, continue the thread, manage threads, cancel or export a
+message, upload and download files, and store per-user memory files an agent
+can read back later. Everything is scoped to a single end user (`user_id`)
+that you set once on the client.
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/sdk/quickstart">
@@ -88,7 +89,8 @@ asyncio.run(main())
     when done. See [Client](/sdk/reference#client) for all settings.
   </Accordion>
   <Accordion title="Resources — chat, threads, and memory" icon="layers">
-    `client.chat` starts and continues conversations and streams progress.
+    `client.chat` starts and continues conversations, streams progress,
+    cancels or exports a message, and uploads/downloads files.
     `client.threads` lists, fetches, updates, and archives threads.
     `client.memory` creates, lists, reads, updates, and deletes per-user memory
     files — all scoped to the client's user. See

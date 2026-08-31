@@ -37,12 +37,33 @@ resolution order.
 | `start`  | `start(*, agent_id, message, name=None, file_ids=None, source_ids=None, document_ids=None, disabled_tools=None)` | `StartedChat` |
 | `send`   | `send(thread_id, *, message, agent_id, file_ids=None, source_ids=None, document_ids=None, disabled_tools=None)` | `AssistantRun` |
 | `stream` | `stream(message_id)` | `AssistantRun` (no I/O until consumed) |
+| `cancel` | `cancel(message_id)` | `Message` (`status` becomes `cancelled`) |
+| `export` | `export(message_id, *, format)` | `bytes` (raw file content) |
+| `upload_file` | `upload_file(content, *, filename, mimetype)` | `ConversationFile` |
+| `download_file` | `download_file(file_pid)` | `bytes` (raw file content) |
 
 - `start` returns a `StartedChat` — a run whose `.thread` is guaranteed present.
 - `send` returns an `AssistantRun` — no `.thread`; you hold the `thread_id`, and
   `threads.get` fetches the rest. Use it to answer the agent's questions.
 - Invalid arguments raise [`InvalidParams`](#exceptions) **before** any request is
   sent.
+
+<Note>
+  `export`'s `format` is `"pdf"` or `"docx"`. `upload_file`'s `content` is
+  either raw `bytes` or a path (`str`/`pathlib.Path`) to read them from;
+  `filename` is limited to 255 characters and can't contain `/`, checked
+  locally before any request.
+</Note>
+
+<Warning>
+  `upload_file` orchestrates 3 HTTP calls, not one: it requests a presigned
+  upload permission, uploads your content directly to that storage URL (a
+  different host — no Cominty token is sent there), then confirms the upload
+  with Cominty. `download_file` similarly follows a presigned URL to a
+  different host to fetch the bytes. Both are single SDK calls; the
+  multi-step flow only matters if you're calling the raw HTTP endpoints
+  yourself — see the [API reference](/api-reference) for the manual steps.
+</Warning>
 
 ### `client.threads`
 
