@@ -76,13 +76,13 @@
     "links": [
       {
         "label": "Support",
-        "href": "mailto:hi@cominty.com"
+        "href": "mailto:hello@cominty.ai"
       }
     ],
     "primary": {
       "type": "button",
       "label": "Go to Cominty",
-      "href": "https://app.cominty.ai"
+      "href": "https://platform.cominty.ai/"
     }
   },
   "contextual": {
