@@ -71,6 +71,13 @@ This is idempotent and does the following:
    the SDK's endpoint set changes. Unused component schemas are intentionally
    left in place (they don't render as pages).
 
+   Within a kept path, the script also drops any operation that does not
+   declare the `x-cominty-token` header. Those operations are not callable
+   with an API key. `POST /chat/files/{file_pid}` (share a file) is the case
+   that shares a path with the download endpoint. Do not add it to `docs.json`.
+   The script then fills summaries and descriptions for the operations it
+   knows, so the generated pages are not titled with the raw generator names.
+
 1. **`itemSchema` → `schema`.** The generator uses `itemSchema` (a too-new OpenAPI
    keyword) on streaming `application/jsonl` responses, e.g.
    `GET /chat/messages/{message_id}/stream`. Mintlify's validator rejects the
@@ -97,7 +104,7 @@ the sidebar). The intro page gives `/api-reference` a stable landing URL that
 other pages link to; the endpoint pages are still auto-generated from the spec.
 If `KEEP_PATHS` changes, update this list to match.
 
-The **Python SDK** tab (`sdk/overview`, `sdk/quickstart`, `sdk/reference`)
+The **Python SDK** tab (`sdk/overview`, `sdk/quickstart`, `sdk/memory`, `sdk/max-steps`, `sdk/reference`)
 documents the `cominty-sdk` PyPI package. There is no local copy of its
 source. Keep these pages aligned with the SDK's own README and code at
 [github.com/cominty/python-sdk](https://github.com/cominty/python-sdk); check
@@ -119,14 +126,27 @@ there directly whenever the SDK gains or changes public resources.
 ## Memory API behavior not covered by the OpenAPI spec
 
 A few things about the memory endpoints aren't derivable from the spec and
-are easy to get wrong, so they're called out explicitly in `api-reference.mdx`
-/ `sdk/reference.mdx`:
+are easy to get wrong, so they're called out explicitly in `api-reference.mdx`,
+`sdk/memory.mdx`, and `sdk/reference.mdx`:
 
+- On the platform, omitting `namespace` on `POST /memory` or
+  `GET`/`PUT`/`DELETE /memory/file` returns 400 `Missing namespace`. The spec
+  marks `namespace` optional (max 128) because other surfaces default it.
+  `GET /memory` without a filter lists every namespace in the organization.
+  `GET /memory/namespaces` lists names that already contain a file. Keep
+  `/memory/namespaces` in `KEEP_PATHS` and in the `docs.json` page list.
+- `user_id` is an optional query on memory endpoints, including `POST /memory`.
+  It is not in the create body, and it does not select the bag. The SDK does
+  not send it on memory calls. Chat start still sends `options.user_id`.
+- `options.memory_namespace` exists only on `POST /chat`. The follow-up
+  `POST /chat/{thread_id}` does not accept it. If neither the start request
+  nor the agent already has a namespace, the thread runs without memory tools.
+  Do not document `/agents` in the public spec.
 - `PUT /memory/file` can't clear a field: sending `content: null` or
   `purpose: null` returns 200 but leaves the existing value untouched (the
-  `version` doesn't change either) instead of clearing it. The SDK now
-  rejects an explicit `None` locally (`InvalidParams`) rather than sending a
-  request that looks like it succeeded but did nothing.
+  `version` doesn't change either) instead of clearing it. The SDK rejects an
+  explicit `None` locally (`InvalidParams`) rather than sending a request that
+  looks like it succeeded but did nothing.
 - `path` may have at most one folder segment. `"a/b/file.md"` returns 422
   (`"Maximum folder depth is 1"`). The SDK validates this locally too, in
   `create`/`get`/`update`/`delete`. `content` may be an empty string (no

@@ -95,6 +95,31 @@ print(await reply.text())
 
 ▶ [`examples/04_answer_questions.py`](https://github.com/cominty/python-sdk/blob/main/examples/04_answer_questions.py)
 
+## Cap the tool rounds
+
+`max_steps` limits how many tool rounds the agent runs for one message. When
+the cap is reached, the agent recaps and asks whether to continue. The message
+still ends with `status="success"`. The cap applies to that message only, so
+pass it again on a follow-up. See [Capping tool rounds](/sdk/max-steps).
+
+```python
+run = await client.chat.start(
+    agent_id=AGENT_ID,
+    message="Research X, then write it up.",
+    max_steps=5,
+)
+await run.text()
+reply = await client.chat.send(
+    run.thread.id,
+    agent_id=AGENT_ID,
+    message="Yes, continue.",
+    max_steps=10,
+)
+print(await reply.text())
+```
+
+▶ [`examples/10_max_steps.py`](https://github.com/cominty/python-sdk/blob/main/examples/10_max_steps.py)
+
 ## Cancel or export a message
 
 ```python
@@ -153,30 +178,44 @@ await client.threads.archive(thread_id)                               # soft-del
 
 ## Store and recall a memory file
 
-`client.memory` persists per-user files an agent can read back in a later
-conversation. `update` is partial, and its required `version` guards against
-overwriting a concurrent change. A stale one raises `ConflictError`.
+`client.memory` stores files in a namespace you choose. The same API key shares
+those files across `user_id` values. `update` is partial, and its required
+`version` guards against overwriting a concurrent change. A stale one raises
+`ConflictError`. The full walkthrough is [Memory namespaces](/sdk/memory).
 
 ```python
 from cominty_sdk import ConflictError
 
+namespace = "support-bot"
+
 created = await client.memory.create(
-    path="preferences/tone.md", purpose="writing style", content="Keep it casual.",
+    path="preferences/tone.md",
+    namespace=namespace,
+    purpose="writing style",
+    content="Keep it casual.",
 )
 
-summaries = await client.memory.list()          # no content, just metadata
-fetched = await client.memory.get("preferences/tone.md")
+summaries = await client.memory.list(namespace=namespace)  # no content
+fetched = await client.memory.get("preferences/tone.md", namespace=namespace)
 
 updated = await client.memory.update(
-    "preferences/tone.md", version=fetched.version, content="Keep it upbeat.",
+    "preferences/tone.md",
+    namespace=namespace,
+    version=fetched.version,
+    content="Keep it upbeat.",
 )
 
 try:
-    await client.memory.update("preferences/tone.md", version=fetched.version, content="stale")
+    await client.memory.update(
+        "preferences/tone.md",
+        namespace=namespace,
+        version=fetched.version,
+        content="stale",
+    )
 except ConflictError:
     print("version was stale. Re-fetch and retry")
 
-await client.memory.delete("preferences/tone.md")
+await client.memory.delete("preferences/tone.md", namespace=namespace)
 ```
 
 ▶ [`examples/09_memory.py`](https://github.com/cominty/python-sdk/blob/main/examples/09_memory.py)

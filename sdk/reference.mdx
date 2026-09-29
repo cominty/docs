@@ -4,8 +4,8 @@ description: "Resources, run handles, data models, events, and exceptions"
 ---
 
 This page documents the SDK's public surface. For task-oriented examples, see the
-[Quickstart](/sdk/quickstart); for the underlying HTTP endpoints, see the
-[API reference](/api-reference).
+[Quickstart](/sdk/quickstart) and the [memory guide](/sdk/memory). For the
+underlying HTTP endpoints, see the [API reference](/api-reference).
 
 ## Client
 
@@ -19,8 +19,9 @@ AsyncCominty(
 )
 ```
 
-- `user_id` is mandatory, validated at construction (`^user_[A-Za-z0-9]{20,}$`),
-  and applied to **every** request. Resource methods never take it.
+- `user_id` is mandatory, validated at construction (`^user_[A-Za-z0-9]{20,}$`).
+  Chat and thread requests send it. Memory requests do not. Resource methods
+  never take `user_id`.
 - Use it as an async context manager (`async with`) or call `await client.close()`.
 - Properties: `client.user_id`, `client.base_url`.
 - Sub-resources: `client.chat`, `client.threads`, `client.memory`.
@@ -34,8 +35,8 @@ resolution order.
 
 | Method   | Signature | Returns |
 | -------- | --------- | ------- |
-| `start`  | `start(*, agent_id, message, name=None, file_ids=None, source_ids=None, document_ids=None, disabled_tools=None)` | `StartedChat` |
-| `send`   | `send(thread_id, *, message, agent_id, file_ids=None, source_ids=None, document_ids=None, disabled_tools=None)` | `AssistantRun` |
+| `start`  | `start(*, agent_id, message, name=None, file_ids=None, source_ids=None, document_ids=None, disabled_tools=None, memory_namespace=None, max_steps=SERVER_DEFAULT)` | `StartedChat` |
+| `send`   | `send(thread_id, *, message, agent_id, file_ids=None, source_ids=None, document_ids=None, disabled_tools=None, max_steps=SERVER_DEFAULT)` | `AssistantRun` |
 | `stream` | `stream(message_id)` | `AssistantRun` (no I/O until consumed) |
 | `cancel` | `cancel(message_id)` | `Message` (`status` becomes `cancelled`) |
 | `export` | `export(message_id, *, format)` | `bytes` (raw file content) |
@@ -43,6 +44,11 @@ resolution order.
 | `download_file` | `download_file(file_pid)` | `bytes` (raw file content) |
 
 - `start` returns a `StartedChat`, a run whose `.thread` is guaranteed present.
+  `memory_namespace` is optional and only accepted here. See the
+  [memory guide](/sdk/memory#attach-a-thread-to-a-bag).
+- `max_steps` caps the tool rounds of one message: an integer `>= 1`, or
+  `SERVER_DEFAULT` (the default), which leaves the field out of the request.
+  See [Capping tool rounds](/sdk/max-steps).
 - `send` returns an `AssistantRun` with no `.thread`. You hold the `thread_id`, and
   `threads.get` fetches the rest. Use it to answer the agent's questions.
 - Invalid arguments raise [`InvalidParams`](#exceptions) **before** any request is
@@ -79,22 +85,24 @@ Scoped to the client's `user_id` automatically. `thread_id` accepts a `str` or a
 
 ### `client.memory`
 
-Scoped to the client's `user_id` automatically.
+Scoped to a caller-chosen namespace, shared by the API key. Not scoped to
+`user_id`. Walkthrough: [Memory namespaces](/sdk/memory).
 
 | Method   | Signature | Returns |
 | -------- | --------- | ------- |
-| `list`   | `list()` | `list[MemoryFileSummaryOut]` (no `content`) |
-| `create` | `create(*, path, purpose, content)` | `MemoryFileOut` |
-| `get`    | `get(path)` | `MemoryFileOut` |
-| `update` | `update(path, *, version, content=..., purpose=...)` | `MemoryFileOut` |
-| `delete` | `delete(path)` | `None` |
+| `list`   | `list(*, namespace=None)` | `list[MemoryFileSummaryOut]` (no `content`) |
+| `list_namespaces` | `list_namespaces()` | `list[str]` |
+| `create` | `create(*, path, namespace, purpose, content)` | `MemoryFileOut` |
+| `get`    | `get(path, *, namespace)` | `MemoryFileOut` |
+| `update` | `update(path, *, namespace, version, content=..., purpose=...)` | `MemoryFileOut` |
+| `delete` | `delete(path, *, namespace)` | `None` |
 
 <Warning>
-  `path` may have **at most one folder segment**. `"notes/todo.md"` is fine,
-  `"a/b/todo.md"` isn't. This isn't in the OpenAPI spec; the SDK checks it
-  locally (raising [`InvalidParams`](#exceptions) before any request) because
-  the API only enforces it after a round trip, with a 422. `content` may be an
-  empty string. There's no minimum length.
+  `namespace` is required on `create`, `get`, `update`, and `delete`. It is a
+  `str` of at most 128 characters, checked locally. `path` may have **at most
+  one folder segment**. `"notes/todo.md"` is fine, `"a/b/todo.md"` isn't. The
+  SDK raises [`InvalidParams`](#exceptions) before any request. `content` may
+  be an empty string. There's no minimum length.
 </Warning>
 
 <Warning>
@@ -179,7 +187,7 @@ unknown fields, so they are forward-compatible.
 
 <ResponseField name="MemoryFileOut" type="object">
   Returned by `memory.create`, `memory.get`, and `memory.update`. `path: str` ·
-  `purpose: str` · `content: str` · `created_at: datetime` ·
+  `namespace: str` · `purpose: str` · `content: str` · `created_at: datetime` ·
   `updated_at: datetime` · `version: str` (opaque, see [`client.memory`](#client-memory))
 </ResponseField>
 
