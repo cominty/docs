@@ -42,6 +42,8 @@
             "pages": [
               "sdk/overview",
               "sdk/quickstart",
+              "sdk/memory",
+              "sdk/max-steps",
               "sdk/reference"
             ]
           }
@@ -68,6 +70,7 @@
               "PUT /chat/{thread_id}",
               "DELETE /chat/{thread_id}",
               "GET /memory",
+              "GET /memory/namespaces",
               "POST /memory",
               "GET /memory/file",
               "PUT /memory/file",

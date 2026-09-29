@@ -2,16 +2,164 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cominty/cominty",
-    "description": "\n### Cominty Meta:\n\n```json\n{\n  \"VERSION_TAG\": \"dev.79907c8\",\n  \"VERSION_AT\": \"2026-05-27T17:50:01+02:00\",\n  \"DEPLOYED_BY\": \"github-actions::jgourinda-cominty\",\n  \"DEPLOYED_AT\": \"2026-05-27T16:09:30Z\",\n  \"AWS_SECRET_NAME\": \"cominty-monorepo-dev-python-api\",\n  \"AWS_SECRET_VERSION\": \"d565f436-8e34-4542-8770-527218797875\",\n  \"AWS_SECRET_REGION\": \"eu-west-3\"\n}\n```\n",
-    "version": "dev.79907c8"
+    "description": "\n### Cominty Meta:\n\n```json\n{\n  \"VERSION_TAG\": \"eng-997-add-organization-scoped-memory-namespaces.6928eb8\",\n  \"VERSION_AT\": \"2026-10-07T14:46:28+02:00\",\n  \"DEPLOYED_BY\": \"github-actions::elfominty\",\n  \"DEPLOYED_AT\": \"2026-10-07T13:06:50Z\",\n  \"AWS_SECRET_NAME\": \"cominty-monorepo-dev-python-api\",\n  \"AWS_SECRET_VERSION\": \"3de071f4-5485-4bf2-a676-0f72bf7aa59f\",\n  \"AWS_SECRET_REGION\": \"eu-west-3\"\n}\n```\n",
+    "version": "eng-997-add-organization-scoped-memory-namespaces.6928eb8"
   },
   "paths": {
+    "/chat/files/{file_pid}": {
+      "get": {
+        "tags": [
+          "chat",
+          "chat"
+        ],
+        "summary": "Download a conversation file",
+        "operationId": "chat_download_conversation_file_chat_files__file_pid__get",
+        "parameters": [
+          {
+            "name": "file_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Pid"
+            },
+            "description": "Identifier of the conversation file."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "title": "Response Chat Download Conversation File Chat Files  File Pid  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Returns a presigned download URL as a JSON string, not the file bytes. Fetch that URL directly. Do not send x-cominty-token to the storage host."
+      }
+    },
+    "/chat/files/upload": {
+      "get": {
+        "tags": [
+          "chat",
+          "chat"
+        ],
+        "summary": "Get an upload permission",
+        "operationId": "get_file_upload_permission_chat_files_upload_get",
+        "parameters": [
+          {
+            "name": "mimetype",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mimetype"
+            },
+            "description": "Media type of the file."
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "pattern": "^[^/]+$",
+              "title": "Filename"
+            },
+            "description": "File name. At most 255 characters, and it cannot contain a slash."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileUploadPermission"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "First step of a file upload. Returns a presigned url and form fields. Upload the file to that url, a storage host rather than ds.cominty.com, as multipart/form-data. Do not send x-cominty-token to the storage host. filename is at most 255 characters and cannot contain a slash."
+      }
+    },
+    "/chat/files": {
+      "post": {
+        "tags": [
+          "chat",
+          "chat"
+        ],
+        "summary": "Confirm an upload",
+        "operationId": "confirm_upload_chat_files_post",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileUploadConfirmation"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/cominty__api__routers__chat__ConversationFileOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Last step of a file upload. Send the ETag from the storage response and the key from the upload permission. The response is a conversation file. Use its id as file_ids on a chat message."
+      }
+    },
     "/chat": {
       "post": {
         "tags": [
+          "chat",
           "chat"
         ],
-        "summary": "Start Chat",
+        "summary": "Start a thread",
         "operationId": "start_chat_chat_post",
         "parameters": [],
         "requestBody": {
@@ -45,13 +193,16 @@
               }
             }
           }
-        }
+        },
+        "description": "Start a conversation and post the first message. The response is the full thread. Send options.agent_id and options.user_id. options.memory_namespace binds the thread to a memory namespace for its whole life. Omit it and the thread uses the namespace already set on the agent, if any. Otherwise the thread runs without long-term memory tools. options.max_steps caps the tool rounds of the first assistant message. Omit it and the server applies its default, currently 60."
       },
       "get": {
         "tags": [
+          "chat",
           "chat"
         ],
-        "summary": "Get Threads",
+        "summary": "List threads",
+        "description": "List threads for one end user. An API token requires user_id and lists that user's API sessions. limit defaults to 50 and cannot exceed 100. page is zero-based. terms is a free-text search of at most 10 strings.",
         "operationId": "get_threads_chat_get",
         "parameters": [
           {
@@ -68,7 +219,25 @@
                 }
               ],
               "title": "User Id"
-            }
+            },
+            "description": "End user whose threads to list. Required for an API token."
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ChatPlatform"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Platform"
+            },
+            "description": "Product surface of the threads. An API token always lists api sessions, so you can omit this."
           },
           {
             "name": "limit",
@@ -79,7 +248,8 @@
               "maximum": 100,
               "default": 50,
               "title": "Limit"
-            }
+            },
+            "description": "Page size. Defaults to 50. Maximum 100."
           },
           {
             "name": "page",
@@ -89,7 +259,8 @@
               "type": "integer",
               "default": 0,
               "title": "Page"
-            }
+            },
+            "description": "Zero-based page index."
           },
           {
             "name": "terms",
@@ -102,7 +273,8 @@
               },
               "maxItems": 10,
               "title": "Terms"
-            }
+            },
+            "description": "Free-text search terms. At most 10 strings."
           }
         ],
         "responses": {
@@ -136,9 +308,10 @@
     "/chat/{thread_id}": {
       "get": {
         "tags": [
+          "chat",
           "chat"
         ],
-        "summary": "Get Thread",
+        "summary": "Get a thread",
         "operationId": "get_thread_chat__thread_id__get",
         "parameters": [
           {
@@ -149,7 +322,8 @@
               "type": "string",
               "format": "uuid",
               "title": "Thread Id"
-            }
+            },
+            "description": "Identifier of the thread."
           }
         ],
         "responses": {
@@ -173,13 +347,15 @@
               }
             }
           }
-        }
+        },
+        "description": "Fetch one thread, including its messages."
       },
       "put": {
         "tags": [
+          "chat",
           "chat"
         ],
-        "summary": "Update Thread",
+        "summary": "Update a thread",
         "operationId": "update_thread_chat__thread_id__put",
         "parameters": [
           {
@@ -190,7 +366,8 @@
               "type": "string",
               "format": "uuid",
               "title": "Thread Id"
-            }
+            },
+            "description": "Identifier of the thread."
           }
         ],
         "requestBody": {
@@ -209,7 +386,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ThreadOut"
+                  "$ref": "#/components/schemas/ThreadWithProjectOut"
                 }
               }
             }
@@ -224,13 +401,15 @@
               }
             }
           }
-        }
+        },
+        "description": "Rename a thread or star it. The response is a summary and does not include messages. Send only the fields you want to change."
       },
       "delete": {
         "tags": [
+          "chat",
           "chat"
         ],
-        "summary": "Archive Thread",
+        "summary": "Archive a thread",
         "operationId": "archive_thread_chat__thread_id__delete",
         "parameters": [
           {
@@ -241,7 +420,8 @@
               "type": "string",
               "format": "uuid",
               "title": "Thread Id"
-            }
+            },
+            "description": "Identifier of the thread."
           }
         ],
         "responses": {
@@ -265,13 +445,15 @@
               }
             }
           }
-        }
+        },
+        "description": "Archive a thread. This does not delete its messages."
       },
       "post": {
         "tags": [
+          "chat",
           "chat"
         ],
-        "summary": "Chat",
+        "summary": "Send a follow-up message",
         "operationId": "chat_chat__thread_id__post",
         "parameters": [
           {
@@ -282,7 +464,8 @@
               "type": "string",
               "format": "uuid",
               "title": "Thread Id"
-            }
+            },
+            "description": "Identifier of the thread."
           }
         ],
         "requestBody": {
@@ -316,15 +499,75 @@
               }
             }
           }
-        }
+        },
+        "description": "Post a message in an existing thread. The response is the new message, not the thread. This call does not accept memory_namespace. The namespace chosen when the thread started stays in effect. options.max_steps caps the tool rounds of this message only. Omit it and the server default applies again, not the value of the previous message."
+      }
+    },
+    "/chat/messages/{message_id}/export": {
+      "get": {
+        "tags": [
+          "chat",
+          "chat"
+        ],
+        "summary": "Export a message",
+        "operationId": "export_step_output_chat_messages__message_id__export_get",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Message Id"
+            },
+            "description": "Identifier of the message to export."
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pdf",
+                "docx"
+              ],
+              "type": "string",
+              "title": "Format"
+            },
+            "description": "pdf or docx."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Export a message as a PDF or DOCX. The response body is the file bytes, not JSON. format is pdf or docx."
       }
     },
     "/chat/messages/{message_id}/stream": {
       "get": {
         "tags": [
+          "chat",
           "chat"
         ],
-        "summary": "Chat.Stream Message Events",
+        "summary": "Stream message events",
         "operationId": "chat_stream_message_events_chat_messages__message_id__stream_get",
         "parameters": [
           {
@@ -335,7 +578,8 @@
               "type": "string",
               "format": "uuid",
               "title": "Message Id"
-            }
+            },
+            "description": "Identifier of the assistant message to stream."
           },
           {
             "name": "last-event-id",
@@ -351,7 +595,8 @@
                 }
               ],
               "title": "Last-Event-Id"
-            }
+            },
+            "description": "Resume the stream after this event. Omit it to start from the beginning."
           }
         ],
         "responses": {
@@ -375,7 +620,54 @@
               }
             }
           }
-        }
+        },
+        "description": "Stream an assistant reply as JSONL events. Send the Last-Event-ID header to resume after a dropped connection."
+      }
+    },
+    "/chat/messages/{message_id}/cancel": {
+      "post": {
+        "tags": [
+          "chat",
+          "chat"
+        ],
+        "summary": "Cancel a message",
+        "operationId": "cancel_message_chat_messages__message_id__cancel_post",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Message Id"
+            },
+            "description": "Identifier of the in-flight assistant message."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Cancel an in-flight assistant message. The response is the message with status cancelled."
       }
     },
     "/memory": {
@@ -383,9 +675,27 @@
         "tags": [
           "memory"
         ],
-        "summary": "List Memory Files",
+        "summary": "List memory files",
         "operationId": "list_memory_files_memory_get",
         "parameters": [
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Namespace"
+            },
+            "description": "If set, only files in this namespace. If omitted, every file visible to the API token. At most 128 characters."
+          },
           {
             "name": "user_id",
             "in": "query",
@@ -400,7 +710,8 @@
                 }
               ],
               "title": "User Id"
-            }
+            },
+            "description": "Optional. Does not select the memory namespace."
           }
         ],
         "responses": {
@@ -428,15 +739,34 @@
               }
             }
           }
-        }
+        },
+        "description": "List memory files visible to this API token. Each item is a summary and does not include content. Pass namespace to limit the list to one namespace. Omit it to list every namespace in the organization."
       },
       "post": {
         "tags": [
           "memory"
         ],
-        "summary": "Create Memory File",
+        "summary": "Create a memory file",
         "operationId": "create_memory_file_memory_post",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            },
+            "description": "Optional. Does not select the memory namespace. The namespace belongs in the JSON body."
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -468,7 +798,63 @@
               }
             }
           }
-        }
+        },
+        "description": "Create a file in a namespace. With an API token, namespace is required and omitting it returns 400 Missing namespace. path, purpose, and content are required. path has at most one folder segment. content may be empty. Creating a path that already exists in that namespace returns 409."
+      }
+    },
+    "/memory/namespaces": {
+      "get": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "List memory namespaces",
+        "operationId": "list_memory_namespaces_memory_namespaces_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            },
+            "description": "Optional. Does not select which namespaces are listed."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response List Memory Namespaces Memory Namespaces Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List namespace names that already contain at least one file. A name appears when the first file is created in it, and disappears when its last file is deleted. There is no separate call to create or delete a namespace."
       }
     },
     "/memory/file": {
@@ -476,7 +862,7 @@
         "tags": [
           "memory"
         ],
-        "summary": "Get Memory File",
+        "summary": "Get a memory file",
         "operationId": "get_memory_file_memory_file_get",
         "parameters": [
           {
@@ -487,7 +873,25 @@
               "type": "string",
               "title": "Path"
             },
-            "description": "At most one folder level (e.g. 'notes/todo.md'); a deeper path (e.g. 'a/b/todo.md') returns 422."
+            "description": "Relative path with at most one folder segment, for example notes/todo.md. a/b/todo.md returns 422."
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Namespace"
+            },
+            "description": "Namespace the file belongs to. Required for an API token. Omitting it returns 400 Missing namespace. At most 128 characters."
           },
           {
             "name": "user_id",
@@ -503,7 +907,8 @@
                 }
               ],
               "title": "User Id"
-            }
+            },
+            "description": "Optional. Does not select the memory namespace."
           }
         ],
         "responses": {
@@ -527,13 +932,14 @@
               }
             }
           }
-        }
+        },
+        "description": "Fetch one file, including its content. With an API token, namespace is required. A missing file returns 404."
       },
       "put": {
         "tags": [
           "memory"
         ],
-        "summary": "Update Memory File",
+        "summary": "Update a memory file",
         "operationId": "update_memory_file_memory_file_put",
         "parameters": [
           {
@@ -544,7 +950,7 @@
               "type": "string",
               "title": "Path"
             },
-            "description": "At most one folder level (e.g. 'notes/todo.md'); a deeper path (e.g. 'a/b/todo.md') returns 422."
+            "description": "Relative path with at most one folder segment, for example notes/todo.md. a/b/todo.md returns 422."
           },
           {
             "name": "version",
@@ -554,7 +960,26 @@
               "type": "string",
               "format": "date-time",
               "title": "Version"
-            }
+            },
+            "description": "Opaque token from the last read of this file. A stale value returns 409. A malformed value returns 422. Send it back unchanged."
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Namespace"
+            },
+            "description": "Namespace the file belongs to. Required for an API token. Omitting it returns 400 Missing namespace. At most 128 characters."
           },
           {
             "name": "user_id",
@@ -570,7 +995,8 @@
                 }
               ],
               "title": "User Id"
-            }
+            },
+            "description": "Optional. Does not select the memory namespace."
           }
         ],
         "requestBody": {
@@ -604,13 +1030,14 @@
               }
             }
           }
-        }
+        },
+        "description": "Update content, purpose, or both. With an API token, namespace, path, and version are required. version is the opaque token from the last read. A stale version returns 409. A malformed version returns 422. Send only the fields you want to change. A JSON null leaves the stored value unchanged and still returns 200. There is no way to clear a field."
       },
       "delete": {
         "tags": [
           "memory"
         ],
-        "summary": "Delete Memory File",
+        "summary": "Delete a memory file",
         "operationId": "delete_memory_file_memory_file_delete",
         "parameters": [
           {
@@ -621,7 +1048,25 @@
               "type": "string",
               "title": "Path"
             },
-            "description": "At most one folder level (e.g. 'notes/todo.md'); a deeper path (e.g. 'a/b/todo.md') returns 422."
+            "description": "Relative path with at most one folder segment, for example notes/todo.md. a/b/todo.md returns 422."
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Namespace"
+            },
+            "description": "Namespace the file belongs to. Required for an API token. Omitting it returns 400 Missing namespace. At most 128 characters."
           },
           {
             "name": "user_id",
@@ -637,7 +1082,8 @@
                 }
               ],
               "title": "User Id"
-            }
+            },
+            "description": "Optional. Does not select the memory namespace."
           }
         ],
         "responses": {
@@ -654,242 +1100,8 @@
               }
             }
           }
-        }
-      }
-    },
-    "/chat/messages/{message_id}/cancel": {
-      "post": {
-        "tags": [
-          "chat"
-        ],
-        "summary": "Cancel Message",
-        "operationId": "cancel_message_chat_messages__message_id__cancel_post",
-        "parameters": [
-          {
-            "name": "message_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Message Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MessageOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/chat/messages/{message_id}/export": {
-      "get": {
-        "tags": [
-          "chat"
-        ],
-        "summary": "Export Step Output",
-        "operationId": "export_step_output_chat_messages__message_id__export_get",
-        "parameters": [
-          {
-            "name": "message_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Message Id"
-            }
-          },
-          {
-            "name": "format",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "enum": [
-                "pdf",
-                "docx"
-              ],
-              "type": "string",
-              "title": "Format"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/chat/files/upload": {
-      "get": {
-        "tags": [
-          "chat"
-        ],
-        "summary": "Get File Upload Permission",
-        "operationId": "get_file_upload_permission_chat_files_upload_get",
-        "parameters": [
-          {
-            "name": "mimetype",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Mimetype"
-            }
-          },
-          {
-            "name": "filename",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "maxLength": 255,
-              "pattern": "^[^/]+$",
-              "title": "Filename"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FileUploadPermission"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/chat/files": {
-      "post": {
-        "tags": [
-          "chat"
-        ],
-        "summary": "Confirm Upload",
-        "operationId": "confirm_upload_chat_files_post",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FileUploadConfirmation"
-              }
-            }
-          }
         },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationFileOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/chat/files/{file_pid}": {
-      "get": {
-        "tags": [
-          "chat"
-        ],
-        "summary": "Chat.Download Conversation File",
-        "operationId": "chat_download_conversation_file_chat_files__file_pid__get",
-        "parameters": [
-          {
-            "name": "file_pid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "File Pid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "string",
-                  "title": "Response Chat Download Conversation File Chat Files  File Pid  Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
+        "description": "Delete one file. With an API token, namespace is required. Success is 204 with no body. Deleting a path that is already gone returns 404."
       }
     }
   },
@@ -919,9 +1131,6 @@
             "type": "string",
             "title": "Name"
           },
-          "mode": {
-            "$ref": "#/components/schemas/AgentMode"
-          },
           "description": {
             "anyOf": [
               {
@@ -938,30 +1147,156 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 2000
+                "maxLength": 30000
               },
               {
                 "type": "null"
               }
             ],
             "title": "Instructions"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope-Input",
+            "default": "private"
+          },
+          "execution_options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatExecutionOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "allow_execution_options_override": {
+            "type": "boolean",
+            "title": "Allow Execution Options Override",
+            "default": false
+          },
+          "model_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Ids"
+          },
+          "memory_namespace": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Namespace"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "name",
-          "mode"
+          "name"
         ],
         "title": "AgentIn"
       },
-      "AgentMode": {
-        "type": "string",
-        "enum": [
-          "lite",
-          "hive"
+      "AgentModelsIn": {
+        "properties": {
+          "model_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Model Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model_ids"
         ],
-        "title": "AgentMode"
+        "title": "AgentModelsIn"
+      },
+      "AgentSummaryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "execution_options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Options"
+          },
+          "memory_namespace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Namespace"
+          },
+          "managed": {
+            "type": "boolean",
+            "title": "Managed"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "owner": {
+            "type": "string",
+            "title": "Owner"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "execution_options",
+          "memory_namespace",
+          "managed",
+          "scope",
+          "owner"
+        ],
+        "title": "AgentSummaryOut"
       },
       "AgentUpdate": {
         "properties": {
@@ -976,16 +1311,6 @@
             ],
             "title": "Name"
           },
-          "mode": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentMode"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "description": {
             "anyOf": [
               {
@@ -1002,13 +1327,56 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 2000
+                "maxLength": 30000
               },
               {
                 "type": "null"
               }
             ],
             "title": "Instructions"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Scope-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution_options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatExecutionOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "allow_execution_options_override": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Execution Options Override"
+          },
+          "memory_namespace": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Namespace"
           }
         },
         "additionalProperties": false,
@@ -1058,6 +1426,10 @@
           "created_by"
         ],
         "title": "ApiTokenOut"
+      },
+      "ArchivedAgentSentinel": {
+        "type": "string",
+        "const": "ARCHIVED"
       },
       "AssetUploadConfirmation": {
         "properties": {
@@ -1113,6 +1485,16 @@
               }
             ],
             "default": "private"
+          },
+          "surface": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClerkSurface"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1135,6 +1517,26 @@
           "file"
         ],
         "title": "Body_add_skill_version_skills__skill_pid__versions_post"
+      },
+      "Body_archive_threads_chat_threads_archive_post": {
+        "properties": {
+          "thread_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "minItems": 1,
+            "uniqueItems": true,
+            "title": "Thread Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_ids"
+        ],
+        "title": "Body_archive_threads_chat_threads_archive_post"
       },
       "Body_create_feedback_customer_support_feedback_post": {
         "properties": {
@@ -1163,6 +1565,32 @@
           "description"
         ],
         "title": "Body_create_feedback_customer_support_feedback_post"
+      },
+      "Body_reschedule_routine_routines__routine_pid__reschedule_put": {
+        "properties": {
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailySchedule-Input"
+              },
+              {
+                "$ref": "#/components/schemas/WeeklySchedule-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MonthlyAbsoluteSchedule-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MonthlyRelativeSchedule-Input"
+              }
+            ],
+            "title": "Schedule"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schedule"
+        ],
+        "title": "Body_reschedule_routine_routines__routine_pid__reschedule_put"
       },
       "Body_transcribe_media_transcribe_post": {
         "properties": {
@@ -1194,11 +1622,79 @@
         ],
         "title": "Chat"
       },
+      "ChatExecutionOptions": {
+        "properties": {
+          "source_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ids"
+          },
+          "document_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Ids"
+          },
+          "disabled_tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "web",
+                        "company_documents"
+                      ]
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^mcp:."
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Tools"
+          }
+        },
+        "type": "object",
+        "title": "ChatExecutionOptions"
+      },
       "ChatOptions": {
         "properties": {
           "agent_id": {
             "type": "string",
-            "title": "Agent Id"
+            "title": "Agent Id",
+            "description": "Agent that answers this message."
+          },
+          "max_steps": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Steps",
+            "default": 60,
+            "description": "Maximum tool rounds the agent may run for this message. Integer, at least 1. Omit it to use the server default, currently 60. It is not carried over from the previous message. Reaching the cap is not an error: the message still ends with status success."
           }
         },
         "type": "object",
@@ -1206,6 +1702,22 @@
           "agent_id"
         ],
         "title": "ChatOptions"
+      },
+      "ChatPlatform": {
+        "type": "string",
+        "enum": [
+          "portal",
+          "api"
+        ],
+        "title": "ChatPlatform",
+        "description": "api sessions are what an API token can list. portal is not used with an API token."
+      },
+      "ClerkSurface": {
+        "type": "string",
+        "enum": [
+          "app.cominty.ai",
+          "platform.cominty.ai"
+        ]
       },
       "ConnectionLessSourceIn": {
         "properties": {
@@ -1267,52 +1779,66 @@
         ],
         "title": "ContentOrigin"
       },
-      "ConversationFileOut": {
+      "DailySchedule-Input": {
         "properties": {
-          "id": {
+          "timezone": {
             "type": "string",
-            "title": "Id"
+            "title": "Timezone"
           },
-          "name": {
+          "run_time": {
             "type": "string",
-            "title": "Name"
+            "format": "time",
+            "title": "Run Time"
           },
-          "size": {
-            "type": "integer",
-            "title": "Size"
-          },
-          "mimetype": {
+          "type": {
             "type": "string",
-            "title": "Mimetype"
+            "const": "daily",
+            "title": "Type"
           },
-          "origin": {
-            "$ref": "#/components/schemas/ContentOrigin"
-          },
-          "share_links": {
-            "items": {
-              "$ref": "#/components/schemas/ShareLinkOut"
-            },
-            "type": "array",
-            "title": "Share Links"
-          },
-          "url": {
+          "include_weekends": {
+            "type": "boolean",
+            "title": "Include Weekends"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timezone",
+          "run_time",
+          "type",
+          "include_weekends"
+        ],
+        "title": "DailySchedule"
+      },
+      "DailySchedule-Output": {
+        "properties": {
+          "timezone": {
             "type": "string",
-            "title": "Url",
-            "readOnly": true
+            "title": "Timezone"
+          },
+          "run_time": {
+            "type": "string",
+            "format": "time",
+            "title": "Run Time"
+          },
+          "type": {
+            "type": "string",
+            "const": "daily",
+            "title": "Type"
+          },
+          "include_weekends": {
+            "type": "boolean",
+            "title": "Include Weekends"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "id",
-          "name",
-          "size",
-          "mimetype",
-          "origin",
-          "share_links",
-          "url"
+          "timezone",
+          "run_time",
+          "type",
+          "include_weekends"
         ],
-        "title": "ConversationFileOut"
+        "title": "DailySchedule"
       },
       "DailyUsage": {
         "properties": {
@@ -1412,6 +1938,74 @@
         ],
         "title": "DriveOut"
       },
+      "ExecutionSummary": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Thread Id"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Message Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MessageStatus"
+          },
+          "reply": {
+            "type": "string",
+            "title": "Reply"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "budget_exhausted"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/cominty__api__routers__routines__ConversationFileOut"
+            },
+            "type": "array",
+            "title": "Artifacts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "message_id",
+          "name",
+          "created_at",
+          "updated_at",
+          "status",
+          "reply",
+          "error_code",
+          "artifacts"
+        ],
+        "title": "ExecutionSummary"
+      },
       "FeedbackType": {
         "type": "string",
         "enum": [
@@ -1465,11 +2059,13 @@
         "properties": {
           "etag": {
             "type": "string",
-            "title": "Etag"
+            "title": "Etag",
+            "description": "ETag returned by the storage upload."
           },
           "key": {
             "type": "string",
-            "title": "Key"
+            "title": "Key",
+            "description": "key field from the upload permission's fields."
           }
         },
         "type": "object",
@@ -1483,12 +2079,14 @@
         "properties": {
           "url": {
             "type": "string",
-            "title": "Url"
+            "title": "Url",
+            "description": "Storage URL to POST the file to. Do not send x-cominty-token there."
           },
           "fields": {
             "additionalProperties": true,
             "type": "object",
-            "title": "Fields"
+            "title": "Fields",
+            "description": "Form fields to include with the file in the storage upload."
           }
         },
         "type": "object",
@@ -1564,27 +2162,6 @@
       },
       "HumanMessage": {
         "properties": {
-          "content": {
-            "type": "string",
-            "maxLength": 30000,
-            "title": "Content"
-          },
-          "file_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array",
-                "maxItems": 5,
-                "uniqueItems": true
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "File Ids"
-          },
           "source_ids": {
             "anyOf": [
               {
@@ -1638,6 +2215,27 @@
               }
             ],
             "title": "Disabled Tools"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 30000,
+            "title": "Content"
+          },
+          "file_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 5,
+                "uniqueItems": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Ids"
           }
         },
         "type": "object",
@@ -1645,6 +2243,653 @@
           "content"
         ],
         "title": "HumanMessage"
+      },
+      "LLMModelChainIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/LLMModelChainTier"
+          },
+          "role": {
+            "$ref": "#/components/schemas/LLMModelChainRole"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "tier",
+          "role",
+          "organization_id"
+        ],
+        "title": "LLMModelChainIn"
+      },
+      "LLMModelChainOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/LLMModelChainTier"
+          },
+          "role": {
+            "$ref": "#/components/schemas/LLMModelChainRole"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "default": {
+            "type": "boolean",
+            "title": "Default"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/LLMModelSummaryOut"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "active",
+          "tier",
+          "role",
+          "organization_id",
+          "default",
+          "created_by",
+          "models"
+        ],
+        "title": "LLMModelChainOut"
+      },
+      "LLMModelChainRole": {
+        "type": "string",
+        "enum": [
+          "inference",
+          "compaction"
+        ],
+        "title": "LLMModelChainRole"
+      },
+      "LLMModelChainTier": {
+        "type": "string",
+        "enum": [
+          "chat",
+          "hive",
+          "planner"
+        ],
+        "title": "LLMModelChainTier"
+      },
+      "LLMModelChainUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LLMModelChainUpdate"
+      },
+      "LLMModelIn": {
+        "properties": {
+          "input_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Input Cost",
+            "default": "0"
+          },
+          "cache_read_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Cost"
+          },
+          "cache_write_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write Cost"
+          },
+          "output_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Output Cost",
+            "default": "0"
+          },
+          "input_tokens_threshold": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens Threshold"
+          },
+          "above_threshold_input_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Input Cost"
+          },
+          "above_threshold_cache_read_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Cache Read Cost"
+          },
+          "above_threshold_cache_write_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Cache Write Cost"
+          },
+          "above_threshold_output_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Output Cost"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "langchain_class": {
+            "type": "string",
+            "title": "Langchain Class"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "langchain_class"
+        ],
+        "title": "LLMModelIn"
+      },
+      "LLMModelOut": {
+        "properties": {
+          "input_cost": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Input Cost",
+            "default": "0"
+          },
+          "cache_read_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Cost"
+          },
+          "cache_write_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write Cost"
+          },
+          "output_cost": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Output Cost",
+            "default": "0"
+          },
+          "input_tokens_threshold": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens Threshold"
+          },
+          "above_threshold_input_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Input Cost"
+          },
+          "above_threshold_cache_read_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Cache Read Cost"
+          },
+          "above_threshold_cache_write_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Cache Write Cost"
+          },
+          "above_threshold_output_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Output Cost"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "langchain_class": {
+            "type": "string",
+            "title": "Langchain Class"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "validation_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Error"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "langchain_class",
+          "params",
+          "valid",
+          "validation_error"
+        ],
+        "title": "LLMModelOut"
+      },
+      "LLMModelSummaryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LLMModelSummaryOut"
+      },
+      "LLMModelUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "langchain_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Langchain Class"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params"
+          },
+          "input_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Cost"
+          },
+          "cache_read_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Cost"
+          },
+          "cache_write_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write Cost"
+          },
+          "output_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Cost"
+          },
+          "input_tokens_threshold": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens Threshold"
+          },
+          "above_threshold_input_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Input Cost"
+          },
+          "above_threshold_cache_read_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Cache Read Cost"
+          },
+          "above_threshold_cache_write_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Cache Write Cost"
+          },
+          "above_threshold_output_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Output Cost"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LLMModelUpdate"
+      },
+      "LangchainClassInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "langchain_class": {
+            "type": "string",
+            "title": "Langchain Class"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "langchain_class"
+        ],
+        "title": "LangchainClassInfo"
       },
       "MaybePartial_MessageOut_": {
         "anyOf": [
@@ -1655,6 +2900,179 @@
             "$ref": "#/components/schemas/PartialResponse_MessageOut_"
           }
         ]
+      },
+      "MemoryFileCreate": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "Relative path with at most one folder segment, for example notes/todo.md."
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose",
+            "description": "Short description of why the file exists. The agent reads it."
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "File body. An empty string is allowed."
+          },
+          "namespace": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Namespace",
+            "description": "Namespace the file belongs to. Required for an API token. At most 128 characters."
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "purpose",
+          "content"
+        ],
+        "title": "MemoryFileCreate"
+      },
+      "MemoryFileOut": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "Path as stored."
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose",
+            "description": "Why the file exists."
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "description": "Namespace the file belongs to."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the file was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "When the file was last updated."
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "File body. May be empty."
+          },
+          "version": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Version",
+            "description": "Opaque version identifier; echo back as `version` when updating.",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "purpose",
+          "namespace",
+          "created_at",
+          "updated_at",
+          "content",
+          "version"
+        ],
+        "title": "MemoryFileOut"
+      },
+      "MemoryFileSummaryOut": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "Path as stored."
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose",
+            "description": "Why the file exists."
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "description": "Namespace the file belongs to."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the file was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "When the file was last updated."
+          },
+          "version": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Version",
+            "description": "Opaque version identifier; echo back as `version` when updating.",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "purpose",
+          "namespace",
+          "created_at",
+          "updated_at",
+          "version"
+        ],
+        "title": "MemoryFileSummaryOut"
+      },
+      "MemoryFileUpdate": {
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content",
+            "description": "New body. Omit the field to leave the stored body unchanged. Null does not clear it."
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purpose",
+            "description": "New purpose. Omit the field to leave the stored purpose unchanged. Null does not clear it."
+          }
+        },
+        "type": "object",
+        "title": "MemoryFileUpdate"
       },
       "MessageOut": {
         "properties": {
@@ -1675,6 +3093,18 @@
           "content": {
             "type": "string",
             "title": "Content"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "budget_exhausted"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
           },
           "questions": {
             "anyOf": [
@@ -1727,10 +3157,24 @@
           },
           "files": {
             "items": {
-              "$ref": "#/components/schemas/ConversationFileOut"
+              "$ref": "#/components/schemas/cominty__api__routers__chat__ConversationFileOut"
             },
             "type": "array",
             "title": "Files"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/cominty__api__routers__chat__AgentOut"
+              },
+              {
+                "$ref": "#/components/schemas/ArchivedAgentSentinel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
           }
         },
         "additionalProperties": false,
@@ -1740,14 +3184,27 @@
           "thread_id",
           "role",
           "content",
+          "error_code",
           "questions",
           "live",
           "status",
           "events",
           "structured_output",
-          "files"
+          "files",
+          "agent"
         ],
         "title": "MessageOut"
+      },
+      "MessageStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "running",
+          "success",
+          "failed",
+          "cancelled"
+        ],
+        "title": "MessageStatus"
       },
       "MinimalSource": {
         "properties": {
@@ -1773,6 +3230,217 @@
         ],
         "title": "MinimalSource"
       },
+      "MonthDay": {
+        "type": "integer",
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31
+        ]
+      },
+      "MonthlyAbsoluteSchedule-Input": {
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "run_time": {
+            "type": "string",
+            "format": "time",
+            "title": "Run Time"
+          },
+          "type": {
+            "type": "string",
+            "const": "monthly_absolute",
+            "title": "Type"
+          },
+          "month_day": {
+            "$ref": "#/components/schemas/MonthDay"
+          },
+          "clamp": {
+            "type": "boolean",
+            "title": "Clamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timezone",
+          "run_time",
+          "type",
+          "month_day",
+          "clamp"
+        ],
+        "title": "MonthlyAbsoluteSchedule"
+      },
+      "MonthlyAbsoluteSchedule-Output": {
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "run_time": {
+            "type": "string",
+            "format": "time",
+            "title": "Run Time"
+          },
+          "type": {
+            "type": "string",
+            "const": "monthly_absolute",
+            "title": "Type"
+          },
+          "month_day": {
+            "$ref": "#/components/schemas/MonthDay"
+          },
+          "clamp": {
+            "type": "boolean",
+            "title": "Clamp"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "timezone",
+          "run_time",
+          "type",
+          "month_day",
+          "clamp"
+        ],
+        "title": "MonthlyAbsoluteSchedule"
+      },
+      "MonthlyRelativeSchedule-Input": {
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "run_time": {
+            "type": "string",
+            "format": "time",
+            "title": "Run Time"
+          },
+          "type": {
+            "type": "string",
+            "const": "monthly_relative",
+            "title": "Type"
+          },
+          "position": {
+            "$ref": "#/components/schemas/RelativePosition"
+          },
+          "day": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeekDay"
+              },
+              {
+                "type": "string",
+                "const": "BUSINESS_DAY"
+              }
+            ],
+            "title": "Day"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timezone",
+          "run_time",
+          "type",
+          "position",
+          "day"
+        ],
+        "title": "MonthlyRelativeSchedule"
+      },
+      "MonthlyRelativeSchedule-Output": {
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "run_time": {
+            "type": "string",
+            "format": "time",
+            "title": "Run Time"
+          },
+          "type": {
+            "type": "string",
+            "const": "monthly_relative",
+            "title": "Type"
+          },
+          "position": {
+            "$ref": "#/components/schemas/RelativePosition"
+          },
+          "day": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeekDay"
+              },
+              {
+                "type": "string",
+                "const": "BUSINESS_DAY"
+              }
+            ],
+            "title": "Day"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "timezone",
+          "run_time",
+          "type",
+          "position",
+          "day"
+        ],
+        "title": "MonthlyRelativeSchedule"
+      },
+      "MoveModelInChainIn": {
+        "properties": {
+          "old_position": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Old Position"
+          },
+          "new_position": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "New Position"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "old_position",
+          "new_position"
+        ],
+        "title": "MoveModelInChainIn"
+      },
       "OAuthAuthorizationURLOut": {
         "properties": {
           "authorization_url": {
@@ -1785,6 +3453,41 @@
           "authorization_url"
         ],
         "title": "OAuthAuthorizationURLOut"
+      },
+      "OrganizationDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "image_url"
+        ],
+        "title": "OrganizationDetail"
       },
       "PartialResponse_MessageOut_": {
         "properties": {
@@ -1804,231 +3507,31 @@
         ],
         "title": "PartialResponse[MessageOut]"
       },
-      "QueryTemplate": {
+      "ProjectCreate": {
         "properties": {
-          "created_by": {
-            "type": "string",
-            "title": "Created By"
-          },
-          "organization_id": {
-            "type": "string",
-            "title": "Organization Id"
-          },
           "name": {
             "type": "string",
             "title": "Name"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          },
-          "content": {
-            "type": "string",
-            "title": "Content"
-          },
-          "metadata": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Metadata"
-          },
-          "icon_uri": {
-            "type": "string",
-            "title": "Icon Uri"
-          },
-          "icon_color": {
-            "type": "string",
-            "title": "Icon Color"
-          },
-          "background_color": {
-            "type": "string",
-            "title": "Background Color"
-          },
-          "scope": {
-            "type": "string",
-            "enum": [
-              "private",
-              "organization"
-            ],
-            "title": "Scope"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          },
-          "updated_by": {
-            "type": "string",
-            "title": "Updated By"
-          },
-          "id": {
-            "type": "string",
-            "title": "Id"
           }
         },
         "type": "object",
         "required": [
-          "created_by",
-          "organization_id",
-          "name",
-          "description",
-          "content",
-          "metadata",
-          "icon_uri",
-          "icon_color",
-          "background_color",
-          "scope",
-          "created_at",
-          "updated_at",
-          "updated_by",
-          "id"
+          "name"
         ],
-        "title": "QueryTemplate"
+        "title": "ProjectCreate"
       },
-      "QueryTemplateIn": {
+      "ProjectUpdate": {
         "properties": {
           "name": {
             "type": "string",
             "title": "Name"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description",
-            "default": ""
-          },
-          "content": {
-            "type": "string",
-            "title": "Content"
-          },
-          "metadata": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Metadata"
-          },
-          "icon_uri": {
-            "type": "string",
-            "title": "Icon Uri",
-            "default": ""
-          },
-          "icon_color": {
-            "type": "string",
-            "title": "Icon Color",
-            "default": ""
-          },
-          "background_color": {
-            "type": "string",
-            "title": "Background Color",
-            "default": ""
-          },
-          "scope": {
-            "$ref": "#/components/schemas/Scope-Input",
-            "default": "private"
           }
         },
         "type": "object",
         "required": [
-          "name",
-          "content"
+          "name"
         ],
-        "title": "QueryTemplateIn"
-      },
-      "QueryTemplateUpdate": {
-        "properties": {
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "content": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          },
-          "metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Metadata"
-          },
-          "icon_uri": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Icon Uri"
-          },
-          "icon_color": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Icon Color"
-          },
-          "background_color": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Background Color"
-          },
-          "scope": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Scope-Input"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "title": "QueryTemplateUpdate"
+        "title": "ProjectUpdate"
       },
       "Question": {
         "properties": {
@@ -2054,6 +3557,401 @@
         "title": "Question",
         "description": "Represents a clarification or follow-up question for the user."
       },
+      "RelativePosition": {
+        "type": "integer",
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          -1
+        ],
+        "title": "RelativePosition"
+      },
+      "RoutineIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/Schedule-Input"
+          },
+          "max_steps": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Steps",
+            "default": 60
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "prompt",
+          "agent_id",
+          "schedule"
+        ],
+        "title": "RoutineIn"
+      },
+      "RoutineOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/cominty__api__routers__routines__AgentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "expired": {
+            "type": "boolean",
+            "title": "Expired"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/Schedule-Output"
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused"
+          },
+          "max_steps": {
+            "type": "integer",
+            "title": "Max Steps"
+          },
+          "orphaned": {
+            "type": "boolean",
+            "title": "Orphaned"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/cominty__api__routers__routines__ProjectOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "executions": {
+            "items": {
+              "$ref": "#/components/schemas/ExecutionSummary"
+            },
+            "type": "array",
+            "title": "Executions"
+          },
+          "next_run": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Next Run",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "updated_at",
+          "name",
+          "prompt",
+          "agent",
+          "expires_at",
+          "expired",
+          "schedule",
+          "paused",
+          "max_steps",
+          "orphaned",
+          "active",
+          "project",
+          "executions",
+          "next_run"
+        ],
+        "title": "RoutineOut"
+      },
+      "RoutineSummaryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/cominty__api__routers__routines__AgentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "expired": {
+            "type": "boolean",
+            "title": "Expired"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/Schedule-Output"
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused"
+          },
+          "max_steps": {
+            "type": "integer",
+            "title": "Max Steps"
+          },
+          "orphaned": {
+            "type": "boolean",
+            "title": "Orphaned"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/cominty__api__routers__routines__ProjectOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_run": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Next Run",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "updated_at",
+          "name",
+          "prompt",
+          "agent",
+          "expires_at",
+          "expired",
+          "schedule",
+          "paused",
+          "max_steps",
+          "orphaned",
+          "active",
+          "project",
+          "next_run"
+        ],
+        "title": "RoutineSummaryOut"
+      },
+      "RoutineUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "max_steps": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Steps"
+          }
+        },
+        "type": "object",
+        "title": "RoutineUpdate"
+      },
+      "Schedule-Input": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/DailySchedule-Input"
+          },
+          {
+            "$ref": "#/components/schemas/WeeklySchedule-Input"
+          },
+          {
+            "$ref": "#/components/schemas/MonthlyAbsoluteSchedule-Input"
+          },
+          {
+            "$ref": "#/components/schemas/MonthlyRelativeSchedule-Input"
+          }
+        ]
+      },
+      "Schedule-Output": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/DailySchedule-Output"
+          },
+          {
+            "$ref": "#/components/schemas/WeeklySchedule-Output"
+          },
+          {
+            "$ref": "#/components/schemas/MonthlyAbsoluteSchedule-Output"
+          },
+          {
+            "$ref": "#/components/schemas/MonthlyRelativeSchedule-Output"
+          }
+        ]
+      },
       "Scope-Input": {
         "type": "string",
         "enum": [
@@ -2061,6 +3959,141 @@
           "private"
         ],
         "title": "Scope"
+      },
+      "SetThreadsProject": {
+        "properties": {
+          "thread_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "minItems": 1,
+            "uniqueItems": true,
+            "title": "Thread Ids"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_ids",
+          "project_id"
+        ],
+        "title": "SetThreadsProject"
+      },
+      "ShareFileIn": {
+        "properties": {
+          "password": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 8
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "title": "ShareFileIn"
+      },
+      "ShareLinkOut": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "last_accessed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Accessed At"
+          },
+          "access_count": {
+            "type": "integer",
+            "title": "Access Count"
+          },
+          "revoked": {
+            "type": "boolean",
+            "title": "Revoked"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "expired": {
+            "type": "boolean",
+            "title": "Expired"
+          },
+          "protected": {
+            "type": "boolean",
+            "title": "Protected"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "created_at",
+          "id",
+          "last_accessed_at",
+          "access_count",
+          "revoked",
+          "expires_at",
+          "expired",
+          "protected",
+          "url"
+        ],
+        "title": "ShareLinkOut"
       },
       "SharepointDrive": {
         "properties": {
@@ -2182,9 +4215,6 @@
             "type": "string",
             "title": "Display Name"
           },
-          "source": {
-            "$ref": "#/components/schemas/SkillSource"
-          },
           "active": {
             "type": "boolean",
             "title": "Active"
@@ -2201,6 +4231,10 @@
           },
           "frontmatter": {
             "$ref": "#/components/schemas/SkillFrontmatter"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SkillSource",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
@@ -2210,10 +4244,10 @@
           "created_at",
           "updated_at",
           "display_name",
-          "source",
           "active",
           "scope",
-          "frontmatter"
+          "frontmatter",
+          "source"
         ],
         "title": "SkillOut"
       },
@@ -2468,7 +4502,20 @@
                 "type": "null"
               }
             ],
-            "title": "Name"
+            "title": "Name",
+            "description": "Optional name for the new thread."
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id",
+            "description": "Optional project to file the thread under."
           },
           "message": {
             "$ref": "#/components/schemas/HumanMessage"
@@ -2488,7 +4535,8 @@
         "properties": {
           "agent_id": {
             "type": "string",
-            "title": "Agent Id"
+            "title": "Agent Id",
+            "description": "Agent that runs this thread."
           },
           "user_id": {
             "anyOf": [
@@ -2499,7 +4547,28 @@
                 "type": "null"
               }
             ],
-            "title": "User Id"
+            "title": "User Id",
+            "description": "End user the thread belongs to. Required for an API token. This does not select the memory namespace."
+          },
+          "max_steps": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Steps",
+            "default": 60,
+            "description": "Maximum tool rounds the agent may run for this message. Integer, at least 1. Omit it to use the server default, currently 60. Reaching the cap is not an error: the message still ends with status success."
+          },
+          "memory_namespace": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Namespace",
+            "description": "Namespace the thread may read and update. At most 128 characters. Omit it to use the agent's namespace, or to run without memory tools when the agent has none. The follow-up message call cannot change it."
           }
         },
         "type": "object",
@@ -2709,12 +4778,20 @@
             "type": "boolean",
             "title": "Live"
           },
-          "agent": {
-            "$ref": "#/components/schemas/cominty__api__routers__chat__AgentOut"
-          },
           "starred": {
             "type": "boolean",
             "title": "Starred"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
           },
           "messages": {
             "items": {
@@ -2722,6 +4799,15 @@
             },
             "type": "array",
             "title": "Messages"
+          },
+          "inception": {
+            "type": "string",
+            "enum": [
+              "conversational",
+              "routine"
+            ],
+            "title": "Inception",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
@@ -2731,9 +4817,9 @@
           "name",
           "created_at",
           "live",
-          "agent",
           "starred",
-          "messages"
+          "messages",
+          "inception"
         ],
         "title": "ThreadOut"
       },
@@ -2757,12 +4843,18 @@
             "type": "boolean",
             "title": "Live"
           },
-          "agent": {
-            "$ref": "#/components/schemas/cominty__api__routers__chat__AgentOut"
-          },
           "starred": {
             "type": "boolean",
             "title": "Starred"
+          },
+          "inception": {
+            "type": "string",
+            "enum": [
+              "conversational",
+              "routine"
+            ],
+            "title": "Inception",
+            "readOnly": true
           }
         },
         "additionalProperties": false,
@@ -2772,8 +4864,8 @@
           "name",
           "created_at",
           "live",
-          "agent",
-          "starred"
+          "starred",
+          "inception"
         ],
         "title": "ThreadSummaryOut"
       },
@@ -2788,7 +4880,8 @@
                 "type": "null"
               }
             ],
-            "title": "Name"
+            "title": "Name",
+            "description": "New thread name. Omit it to leave the name unchanged."
           },
           "starred": {
             "anyOf": [
@@ -2799,12 +4892,82 @@
                 "type": "null"
               }
             ],
-            "title": "Starred"
+            "title": "Starred",
+            "description": "Whether the thread is starred."
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id",
+            "description": "Project to file the thread under."
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "ThreadUpdate"
+      },
+      "ThreadWithProjectOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "live": {
+            "type": "boolean",
+            "title": "Live"
+          },
+          "starred": {
+            "type": "boolean",
+            "title": "Starred"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "inception": {
+            "type": "string",
+            "enum": [
+              "conversational",
+              "routine"
+            ],
+            "title": "Inception",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "live",
+          "starred",
+          "inception"
+        ],
+        "title": "ThreadWithProjectOut"
       },
       "Threads": {
         "properties": {
@@ -2867,21 +5030,152 @@
           "count": {
             "type": "integer",
             "title": "Count"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "extra_cost_usd": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Cost Usd"
           }
         },
         "type": "object",
         "required": [
           "agent_id",
           "user_id",
-          "count"
+          "count",
+          "cost_usd",
+          "input_tokens",
+          "output_tokens",
+          "extra_cost_usd"
         ],
         "title": "Usage"
+      },
+      "UsageBudgetIn": {
+        "properties": {
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "title": "UsageBudgetIn"
+      },
+      "UsageBudgetOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          },
+          "default": {
+            "type": "boolean",
+            "title": "Default"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "organization_id",
+          "amount",
+          "default"
+        ],
+        "title": "UsageBudgetOut"
       },
       "UsageReport": {
         "properties": {
           "period_days": {
             "type": "integer",
             "title": "Period Days"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatPlatform"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "timeseries": {
             "items": {
@@ -2908,6 +5202,7 @@
         "type": "object",
         "required": [
           "period_days",
+          "platform",
           "timeseries",
           "users",
           "agents"
@@ -3015,6 +5310,78 @@
         ],
         "title": "ValidationError"
       },
+      "WeekDay": {
+        "type": "string",
+        "enum": [
+          "MONDAY",
+          "TUESDAY",
+          "WEDNESDAY",
+          "THURSDAY",
+          "FRIDAY",
+          "SATURDAY",
+          "SUNDAY"
+        ],
+        "title": "WeekDay"
+      },
+      "WeeklySchedule-Input": {
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "run_time": {
+            "type": "string",
+            "format": "time",
+            "title": "Run Time"
+          },
+          "type": {
+            "type": "string",
+            "const": "weekly",
+            "title": "Type"
+          },
+          "week_day": {
+            "$ref": "#/components/schemas/WeekDay"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timezone",
+          "run_time",
+          "type",
+          "week_day"
+        ],
+        "title": "WeeklySchedule"
+      },
+      "WeeklySchedule-Output": {
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "run_time": {
+            "type": "string",
+            "format": "time",
+            "title": "Run Time"
+          },
+          "type": {
+            "type": "string",
+            "const": "weekly",
+            "title": "Type"
+          },
+          "week_day": {
+            "$ref": "#/components/schemas/WeekDay"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "timezone",
+          "run_time",
+          "type",
+          "week_day"
+        ],
+        "title": "WeeklySchedule"
+      },
       "cominty__api__routers__agents__AgentOut": {
         "properties": {
           "id": {
@@ -3024,10 +5391,6 @@
           "name": {
             "type": "string",
             "title": "Name"
-          },
-          "mode": {
-            "type": "string",
-            "title": "Mode"
           },
           "description": {
             "anyOf": [
@@ -3040,6 +5403,41 @@
             ],
             "title": "Description"
           },
+          "execution_options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Options"
+          },
+          "memory_namespace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Namespace"
+          },
+          "managed": {
+            "type": "boolean",
+            "title": "Managed"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "owner": {
+            "type": "string",
+            "title": "Owner"
+          },
           "instructions": {
             "anyOf": [
               {
@@ -3051,10 +5449,16 @@
             ],
             "title": "Instructions"
           },
-          "owner": {
-            "type": "string",
-            "title": "Owner",
-            "readOnly": true
+          "allow_execution_options_override": {
+            "type": "boolean",
+            "title": "Allow Execution Options Override"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/LLMModelSummaryOut"
+            },
+            "type": "array",
+            "title": "Models"
           }
         },
         "additionalProperties": false,
@@ -3062,10 +5466,15 @@
         "required": [
           "id",
           "name",
-          "mode",
           "description",
+          "execution_options",
+          "memory_namespace",
+          "managed",
+          "scope",
+          "owner",
           "instructions",
-          "owner"
+          "allow_execution_options_override",
+          "models"
         ],
         "title": "AgentOut"
       },
@@ -3087,6 +5496,92 @@
           "name"
         ],
         "title": "AgentOut"
+      },
+      "cominty__api__routers__chat__ConversationFileOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "mimetype": {
+            "type": "string",
+            "title": "Mimetype"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/ContentOrigin"
+          },
+          "share_links": {
+            "items": {
+              "$ref": "#/components/schemas/ShareLinkOut"
+            },
+            "type": "array",
+            "title": "Share Links"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "size",
+          "mimetype",
+          "origin",
+          "share_links",
+          "url"
+        ],
+        "title": "ConversationFileOut"
+      },
+      "cominty__api__routers__chat__ProjectOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "threads": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadSummaryOut"
+            },
+            "type": "array",
+            "title": "Threads"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "updated_at",
+          "threads"
+        ],
+        "title": "ProjectOut"
       },
       "cominty__api__routers__document_stores__connections__ConnectionOut": {
         "properties": {
@@ -3253,6 +5748,79 @@
         ],
         "title": "ConnectionOut"
       },
+      "cominty__api__routers__routines__AgentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AgentOut"
+      },
+      "cominty__api__routers__routines__ConversationFileOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "mimetype": {
+            "type": "string",
+            "title": "Mimetype"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "size",
+          "mimetype",
+          "url"
+        ],
+        "title": "ConversationFileOut"
+      },
+      "cominty__api__routers__routines__ProjectOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ProjectOut"
+      },
       "cominty__api__services__mcp__Scope": {
         "properties": {
           "name": {
@@ -3283,213 +5851,6 @@
           "private"
         ],
         "title": "Scope"
-      },
-      "MemoryFileCreate": {
-        "properties": {
-          "path": {
-            "type": "string",
-            "title": "Path",
-            "description": "At most one folder level (e.g. 'notes/todo.md'); a deeper path (e.g. 'a/b/todo.md') returns 422."
-          },
-          "purpose": {
-            "type": "string",
-            "title": "Purpose"
-          },
-          "content": {
-            "type": "string",
-            "title": "Content"
-          },
-          "user_id": {
-            "type": "string",
-            "title": "User Id"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "path",
-          "purpose",
-          "content",
-          "user_id"
-        ],
-        "title": "MemoryFileCreate"
-      },
-      "MemoryFileUpdate": {
-        "properties": {
-          "content": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          },
-          "purpose": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Purpose"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "MemoryFileUpdate"
-      },
-      "MemoryFileOut": {
-        "properties": {
-          "path": {
-            "type": "string",
-            "title": "Path"
-          },
-          "purpose": {
-            "type": "string",
-            "title": "Purpose"
-          },
-          "content": {
-            "type": "string",
-            "title": "Content"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          },
-          "version": {
-            "type": "string",
-            "title": "Version"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "path",
-          "purpose",
-          "content",
-          "created_at",
-          "updated_at",
-          "version"
-        ],
-        "title": "MemoryFileOut"
-      },
-      "MemoryFileSummaryOut": {
-        "properties": {
-          "path": {
-            "type": "string",
-            "title": "Path"
-          },
-          "purpose": {
-            "type": "string",
-            "title": "Purpose"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          },
-          "version": {
-            "type": "string",
-            "title": "Version"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "path",
-          "purpose",
-          "created_at",
-          "updated_at",
-          "version"
-        ],
-        "title": "MemoryFileSummaryOut"
-      },
-      "ShareLinkOut": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "last_accessed_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Accessed At"
-          },
-          "access_count": {
-            "type": "integer",
-            "title": "Access Count"
-          },
-          "revoked": {
-            "type": "boolean",
-            "title": "Revoked"
-          },
-          "expires_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expires At"
-          },
-          "expired": {
-            "type": "boolean",
-            "title": "Expired"
-          },
-          "protected": {
-            "type": "boolean",
-            "title": "Protected"
-          },
-          "url": {
-            "type": "string",
-            "title": "Url"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "created_at",
-          "last_accessed_at",
-          "access_count",
-          "revoked",
-          "expires_at",
-          "expired",
-          "protected",
-          "url"
-        ],
-        "title": "ShareLinkOut"
       }
     },
     "securitySchemes": {
@@ -3497,7 +5858,7 @@
         "type": "apiKey",
         "in": "header",
         "name": "x-cominty-token",
-        "description": "Your Cominty API token."
+        "description": "A Cominty Platform API secret. A key created now starts with sk-cmt-. Send it as is, or as Bearer sk-cmt-..., with at most one Bearer prefix. A key created before the prefix existed has no sk-cmt- and still works."
       }
     }
   },
