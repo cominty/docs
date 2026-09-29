@@ -20,7 +20,7 @@ AsyncCominty(
 ```
 
 - `user_id` is mandatory, validated at construction (`^user_[A-Za-z0-9]{20,}$`),
-  and applied to **every** request — resource methods never take it.
+  and applied to **every** request. Resource methods never take it.
 - Use it as an async context manager (`async with`) or call `await client.close()`.
 - Properties: `client.user_id`, `client.base_url`.
 - Sub-resources: `client.chat`, `client.threads`, `client.memory`.
@@ -42,8 +42,8 @@ resolution order.
 | `upload_file` | `upload_file(content, *, filename, mimetype)` | `ConversationFile` |
 | `download_file` | `download_file(file_pid)` | `bytes` (raw file content) |
 
-- `start` returns a `StartedChat` — a run whose `.thread` is guaranteed present.
-- `send` returns an `AssistantRun` — no `.thread`; you hold the `thread_id`, and
+- `start` returns a `StartedChat`, a run whose `.thread` is guaranteed present.
+- `send` returns an `AssistantRun` with no `.thread`. You hold the `thread_id`, and
   `threads.get` fetches the rest. Use it to answer the agent's questions.
 - Invalid arguments raise [`InvalidParams`](#exceptions) **before** any request is
   sent.
@@ -58,11 +58,11 @@ resolution order.
 <Warning>
   `upload_file` orchestrates 3 HTTP calls, not one: it requests a presigned
   upload permission, uploads your content directly to that storage URL (a
-  different host — no Cominty token is sent there), then confirms the upload
+  different host, so no Cominty token is sent there), then confirms the upload
   with Cominty. `download_file` similarly follows a presigned URL to a
   different host to fetch the bytes. Both are single SDK calls; the
   multi-step flow only matters if you're calling the raw HTTP endpoints
-  yourself — see the [API reference](/api-reference) for the manual steps.
+  yourself. See the [API reference](/api-reference) for the manual steps.
 </Warning>
 
 ### `client.threads`
@@ -90,23 +90,23 @@ Scoped to the client's `user_id` automatically.
 | `delete` | `delete(path)` | `None` |
 
 <Warning>
-  `path` may have **at most one folder segment** — `"notes/todo.md"` is fine,
+  `path` may have **at most one folder segment**. `"notes/todo.md"` is fine,
   `"a/b/todo.md"` isn't. This isn't in the OpenAPI spec; the SDK checks it
   locally (raising [`InvalidParams`](#exceptions) before any request) because
   the API only enforces it after a round trip, with a 422. `content` may be an
-  empty string — there's no minimum length.
+  empty string. There's no minimum length.
 </Warning>
 
 <Warning>
   `update` is partial: only the fields you pass are sent. **There is
-  currently no way to clear `content` or `purpose` once set** — the API
+  currently no way to clear `content` or `purpose` once set**. The API
   silently ignores an explicit `null` (200, value unchanged), so the SDK
   raises [`InvalidParams`](#exceptions) locally for `content=None` or
   `purpose=None` instead of sending a request that looks like it succeeded
   but did nothing. `version` is required and must be the value from your last
   read of the file; a stale one raises [`ConflictError`](#exceptions) (409), a
   malformed one raises [`APIError`](#exceptions) (422). Treat `version` as an
-  opaque token — round-trip it, never parse or compare it.
+  opaque token. Round-trip it, never parse or compare it.
 </Warning>
 
 <Warning>
@@ -119,7 +119,7 @@ Scoped to the client's `user_id` automatically.
 
 Returned by `chat.start` (`StartedChat`) and by `chat.send` / `chat.stream`
 (`AssistantRun`). A run is the assistant's in-progress reply. Its stream is
-**single-use** — iterate it **or** await its result (the result is cached either
+**single-use**. Iterate it **or** await its result (the result is cached either
 way).
 
 | Member | Description |
@@ -180,7 +180,7 @@ unknown fields, so they are forward-compatible.
 <ResponseField name="MemoryFileOut" type="object">
   Returned by `memory.create`, `memory.get`, and `memory.update`. `path: str` ·
   `purpose: str` · `content: str` · `created_at: datetime` ·
-  `updated_at: datetime` · `version: str` (opaque — see [`client.memory`](#client-memory))
+  `updated_at: datetime` · `version: str` (opaque, see [`client.memory`](#client-memory))
 </ResponseField>
 
 <ResponseField name="MemoryFileSummaryOut" type="object">
@@ -211,8 +211,8 @@ Every event has `id: str`, `correlation_id: int`, `at: datetime`,
 
 | Class | `name` | Payload (`event.data`) |
 | ----- | ------ | ---------------------- |
-| `WaitingForStart` | `waiting_for_start` | — |
-| `SettingUpSandbox` | `setting_up_sandbox` | — |
+| `WaitingForStart` | `waiting_for_start` | none |
+| `SettingUpSandbox` | `setting_up_sandbox` | none |
 | `UploadingFile` | `uploading_file` | `filename` |
 | `LlmStep` | `llm` | `description`, `model` |
 | `IntermediaryUpdate` | `intermediary_update` | `message` |
@@ -229,7 +229,7 @@ Every event has `id: str`, `correlation_id: int`, `at: datetime`,
 
 ```text
 ComintyError
-├── APIError              # HTTP 4xx/5xx — .status_code, .detail, .body, .headers
+├── APIError              # HTTP 4xx/5xx. .status_code, .detail, .body, .headers
 │   ├── AuthError         # 401
 │   ├── PermissionError   # 403
 │   ├── NotFoundError     # 404
@@ -237,8 +237,8 @@ ComintyError
 │   ├── RateLimitError    # 429
 │   └── ServerError       # 5xx
 ├── APIConnectionError    # network error / timeout (no response)
-├── StreamInterrupted     # server shut down mid-stream — .partial: Message
-├── InvalidParams         # client-side validation failed — .errors: list[InvalidParam]
+├── StreamInterrupted     # server shut down mid-stream. .partial: Message
+├── InvalidParams         # client-side validation failed. .errors: list[InvalidParam]
 └── SDKError              # internal SDK bug
 ```
 

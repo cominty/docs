@@ -35,7 +35,7 @@ python examples/01_stream_events.py
 
 ## Stream progress events
 
-Watch the agent work — tool calls, LLM steps, the result — as it happens.
+Watch the agent work (tool calls, LLM steps, the result) as it happens.
 Iterating a run yields **progress events only**; the finished reply is captured
 for you.
 
@@ -55,7 +55,7 @@ print(await run.text())
 
 ## Fire and await the answer
 
-No event handling — just the final reply.
+No event handling. Just the final reply.
 
 ```python
 run = await client.chat.start(agent_id=AGENT_ID, message="Give me one fun fact.")
@@ -100,7 +100,7 @@ print(await reply.text())
 ```python
 run = await client.chat.start(agent_id=AGENT_ID, message="Write a long story.")
 
-# Cancel a still-running message — returns the Message with status "cancelled"
+# Cancel a still-running message. Returns the Message with status "cancelled"
 cancelled = await client.chat.cancel(run.message_id)
 
 # Export a finished message as a file (format is "pdf" or "docx")
@@ -155,7 +155,7 @@ await client.threads.archive(thread_id)                               # soft-del
 
 `client.memory` persists per-user files an agent can read back in a later
 conversation. `update` is partial, and its required `version` guards against
-overwriting a concurrent change — a stale one raises `ConflictError`.
+overwriting a concurrent change. A stale one raises `ConflictError`.
 
 ```python
 from cominty_sdk import ConflictError
@@ -174,7 +174,7 @@ updated = await client.memory.update(
 try:
     await client.memory.update("preferences/tone.md", version=fetched.version, content="stale")
 except ConflictError:
-    print("version was stale — re-fetch and retry")
+    print("version was stale. Re-fetch and retry")
 
 await client.memory.delete("preferences/tone.md")
 ```
@@ -183,8 +183,8 @@ await client.memory.delete("preferences/tone.md")
 
 ## Use a custom managed agent
 
-A custom agent — its own model, failover order, and instructions, configured at
-[platform.cominty.ai → Agents](https://platform.cominty.ai/agents) — is just
+A custom agent (its own model, failover order, and instructions, configured at
+[platform.cominty.ai → Agents](https://platform.cominty.ai/agents)) is just
 another `agent_id`. Pass it to any chat call. This example feeds a jargon-heavy
 incident report to an agent instructed to reply with a clean, non-technical
 **French** executive summary.
@@ -203,7 +203,7 @@ print(await run.text())   # bullet-point French briefing for a C-level reader
 ## Pull live context from an MCP server
 
 MCP servers connected to an agent on the platform (for example Linear) work with
-**no SDK change** — tools are on by default, and you only disable what you don't
+**no SDK change**. Tools are on by default, and you only disable what you don't
 want. Here the custom agent reads the current Linear sprint and reports it in its
 French C-level voice. Linear tool calls appear in the stream as `ToolCall`
 events.

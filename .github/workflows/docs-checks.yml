@@ -22,7 +22,7 @@ jobs:
       - name: Install Mintlify CLI
         run: npm install -g mint@4.2.748
 
-      - name: Validate docs build (strict — includes docs.json + openapi.json)
+      - name: Validate docs build (strict, includes docs.json + openapi.json)
         run: mint validate
 
       - name: Check for broken links

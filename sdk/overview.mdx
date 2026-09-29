@@ -54,7 +54,7 @@ You need two credentials, both from [platform.cominty.ai](https://platform.comin
     export COMINTY_USER_ID="user_..."
     ```
 
-    With both set, `AsyncCominty()` picks them up automatically — no arguments
+    With both set, `AsyncCominty()` picks them up automatically. No arguments
     needed.
   </Step>
 </Steps>
@@ -82,27 +82,27 @@ asyncio.run(main())
 ## Core concepts
 
 <AccordionGroup>
-  <Accordion title="Client — one user per client" icon="user">
+  <Accordion title="Client: one user per client" icon="user">
     `AsyncCominty` is bound to a single `user_id`, validated at construction and
     applied to **every** request. Resource methods never take `user_id`. Use it
     as an async context manager (`async with`) or call `await client.close()`
     when done. See [Client](/sdk/reference#client) for all settings.
   </Accordion>
-  <Accordion title="Resources — chat, threads, and memory" icon="layers">
+  <Accordion title="Resources: chat, threads, and memory" icon="layers">
     `client.chat` starts and continues conversations, streams progress,
     cancels or exports a message, and uploads/downloads files.
     `client.threads` lists, fetches, updates, and archives threads.
     `client.memory` creates, lists, reads, updates, and deletes per-user memory
-    files — all scoped to the client's user. See
+    files, all scoped to the client's user. See
     [Resources](/sdk/reference#resources).
   </Accordion>
-  <Accordion title="Runs — the assistant's in-progress reply" icon="activity">
+  <Accordion title="Runs: the assistant's in-progress reply" icon="activity">
     `chat.start` and `chat.send` return a **run**: the assistant's reply as it
     is being produced. Iterate it for live progress events, or just
     `await run.text()` for the final answer. A run's stream is single-use. See
     [The run handle](/sdk/reference#the-run-handle).
   </Accordion>
-  <Accordion title="Tools — on by default" icon="wrench">
+  <Accordion title="Tools: on by default" icon="wrench">
     Web search, company-document retrieval, and any MCP servers connected to the
     agent are enabled automatically. You only ever turn things **off**, with
     `disabled_tools`. See [`disabled_tools`](/sdk/reference#disabled-tools).
@@ -113,10 +113,10 @@ asyncio.run(main())
 
 | Setting   | Argument    | Env var            | Default                     |
 | --------- | ----------- | ------------------ | --------------------------- |
-| API key   | `api_token` | `COMINTY_API_KEY`  | — (required)                |
-| End user  | `user_id`   | `COMINTY_USER_ID`  | — (required)                |
+| API key   | `api_token` | `COMINTY_API_KEY`  | required                    |
+| End user  | `user_id`   | `COMINTY_USER_ID`  | required                    |
 | Base URL  | `base_url`  | `COMINTY_BASE_URL` | `https://ds.cominty.com`    |
-| Timeout   | `timeout`   | —                  | `60` (seconds)              |
+| Timeout   | `timeout`   | none               | `60` (seconds)              |
 
 Resolution order is **explicit argument → environment variable → default**. The
 SDK does **not** auto-load `.env` files.
