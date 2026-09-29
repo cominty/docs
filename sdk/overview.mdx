@@ -116,7 +116,7 @@ asyncio.run(main())
 | API key   | `api_token` | `COMINTY_API_KEY`  | required                    |
 | End user  | `user_id`   | `COMINTY_USER_ID`  | required                    |
 | Base URL  | `base_url`  | `COMINTY_BASE_URL` | `https://ds.cominty.com`    |
-| Timeout   | `timeout`   | none               | `60` (seconds)              |
+| Timeout   | `timeout`   | -                  | `60` (seconds)              |
 
 Resolution order is **explicit argument → environment variable → default**. The
 SDK does **not** auto-load `.env` files.

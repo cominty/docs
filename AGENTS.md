@@ -38,7 +38,7 @@ Keep sentences concise. One idea per sentence.
 `mint` is the Mintlify CLI. Run `npm i -g mint` if it is missing.
 ```
 
-A hyphen (`-`) is fine. Do not use an em dash as an empty table cell. Write `none` or `required`.
+A hyphen (`-`) joins compound words (`rendez-vous`, `fully-typed`). It is also fine as an empty table cell. Do not use it in place of an em dash in a sentence.
 
 ## Running the site locally
 
