@@ -7,14 +7,14 @@ this script after every regeneration of `openapi.json`:
 
     python scripts/sanitize_openapi.py
 
-It is idempotent — safe to run repeatedly. It does five things:
+It is idempotent and safe to run repeatedly. It does five things:
 
 0. Prune to the SDK surface
    The public docs only cover the endpoints the Python SDK uses (chat, threads,
    memory). The generator emits the full internal API (~50 paths, including
    internal-only ones like /dc/internal/sources/readable). We drop every path
-   except the whitelist in KEEP_PATHS, so the public spec — and the API
-   reference it generates — is limited to what the SDK exposes. KEEP_PATHS is
+   except the whitelist in KEEP_PATHS, so the public spec, and the API
+   reference it generates, is limited to what the SDK exposes. KEEP_PATHS is
    the single source of truth for that surface; don't restate its size or
    contents elsewhere (docs, comments) since it changes as the SDK grows.
    Unused component schemas are left in place; they don't render as pages and
@@ -31,7 +31,7 @@ It is idempotent — safe to run repeatedly. It does five things:
    to call. We set a default and override the hosts that differ:
        default     -> https://ds.cominty.com   (/dc/*, /chat/*, /agents, ...)
        /mcp/*      -> https://mcp.cominty.com
-   NOTE: verify the /mcp base — with this override the full URL becomes
+   NOTE: verify the /mcp base. With this override the full URL becomes
    https://mcp.cominty.com/mcp/scopes. Adjust DEFAULT_SERVER / HOST_OVERRIDES
    below if the real routing differs.
 
@@ -44,7 +44,7 @@ It is idempotent — safe to run repeatedly. It does five things:
 
 4. De-duplicate the token field
    Where the generator already declares `x-cominty-token` as an explicit header
-   *parameter* (the /chat ops), we remove it — the security scheme now covers
+   *parameter* (the /chat ops), we remove it. The security scheme now covers
    it, and leaving both makes the playground show the token field twice.
 
 If the generator starts emitting other Mintlify-incompatible constructs, add

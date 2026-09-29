@@ -20,7 +20,7 @@ SKIP_DIRS = {".git", "node_modules", ".mint", ".mintlify"}
 
 FENCE_RE = re.compile(r"```python\n(.*?)```", re.DOTALL)
 # A bare `Name(` ... `)` block is a constructor/method *signature* shown for
-# documentation, not executable code — e.g. `AsyncCominty(*, user_id=None, ...)`.
+# documentation, not executable code, e.g. `AsyncCominty(*, user_id=None, ...)`.
 # `*,` (keyword-only marker) is only valid in a `def`, not a call, so we
 # reparse these as a function definition instead of flagging them.
 SIGNATURE_RE = re.compile(r"^([A-Za-z_]\w*)\(\s*$")
