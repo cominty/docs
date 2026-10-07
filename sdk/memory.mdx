@@ -38,16 +38,6 @@ new name brings that bag into existence. `list_namespaces()` then includes the
 name. `get` and `delete` on a path that is not in that bag raise
 `NotFoundError`. They do not create the bag.
 
-```mermaid
-stateDiagram-v2
-  direction LR
-  [*] --> Absent
-  Absent --> Listed: create() of the first file
-  Listed --> Listed: create, update, delete other files
-  Listed --> Absent: delete() of the last file
-  Absent --> Absent: get() or delete() raises NotFoundError
-```
-
 For the HTTP contract, see [Memory on the platform](/api-reference#memory-on-the-platform).
 For every signature, see [`client.memory`](/sdk/reference#clientmemory).
 
