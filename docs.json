@@ -57,24 +57,52 @@
             "openapi": "/openapi.json",
             "pages": [
               "api-reference",
-              "POST /chat",
-              "POST /chat/{thread_id}",
-              "GET /chat/messages/{message_id}/stream",
-              "POST /chat/messages/{message_id}/cancel",
-              "GET /chat/messages/{message_id}/export",
-              "GET /chat/files/upload",
-              "POST /chat/files",
-              "GET /chat/files/{file_pid}",
-              "GET /chat",
-              "GET /chat/{thread_id}",
-              "PUT /chat/{thread_id}",
-              "DELETE /chat/{thread_id}",
-              "GET /memory",
-              "GET /memory/namespaces",
-              "POST /memory",
-              "GET /memory/file",
-              "PUT /memory/file",
-              "DELETE /memory/file"
+              {
+                "group": "Threads",
+                "icon": "messages-square",
+                "expanded": true,
+                "pages": [
+                  "POST /chat",
+                  "POST /chat/{thread_id}",
+                  "GET /chat",
+                  "GET /chat/{thread_id}",
+                  "PUT /chat/{thread_id}",
+                  "DELETE /chat/{thread_id}"
+                ]
+              },
+              {
+                "group": "Messages",
+                "icon": "message-square",
+                "expanded": true,
+                "pages": [
+                  "GET /chat/messages/{message_id}/stream",
+                  "POST /chat/messages/{message_id}/cancel",
+                  "GET /chat/messages/{message_id}/export"
+                ]
+              },
+              {
+                "group": "Files",
+                "icon": "paperclip",
+                "expanded": true,
+                "pages": [
+                  "GET /chat/files/upload",
+                  "POST /chat/files",
+                  "GET /chat/files/{file_pid}"
+                ]
+              },
+              {
+                "group": "Memory",
+                "icon": "database",
+                "expanded": true,
+                "pages": [
+                  "GET /memory",
+                  "GET /memory/namespaces",
+                  "POST /memory",
+                  "GET /memory/file",
+                  "PUT /memory/file",
+                  "DELETE /memory/file"
+                ]
+              }
             ]
           }
         ]

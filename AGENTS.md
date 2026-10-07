@@ -98,9 +98,10 @@ This is idempotent and does the following:
 ## API reference
 
 The **API Reference** tab uses a group with `"openapi": "/openapi.json"` plus an
-explicit page list: an intro page (`api-reference.mdx`) followed by each endpoint
-referenced as `"POST /chat"`, `"GET /chat/{thread_id}"`, etc. (the order shown in
-the sidebar). The intro page gives `/api-reference` a stable landing URL that
+explicit page list: an intro page (`api-reference.mdx`) followed by nested groups
+(Threads, Messages, Files, Memory). Each group lists its endpoints as
+`"POST /chat"`, `"GET /chat/{thread_id}"`, etc. (the order shown in the
+sidebar). Put a new endpoint in the group that matches its resource. The intro page gives `/api-reference` a stable landing URL that
 other pages link to; the endpoint pages are still auto-generated from the spec.
 If `KEEP_PATHS` changes, update this list to match.
 
