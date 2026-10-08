@@ -155,8 +155,9 @@ ignored.
 `POST /chat` and `POST /chat/{thread_id}` accept `options.max_steps`: an
 integer `>= 1` that caps the tool rounds of **that message**. Omit it and the
 server applies its default (60 today, and it may change). The cap is per
-message and is not stored or returned. For the behavior, see
-[Capping tool rounds](/guides/max-steps).
+message and is not stored or returned. Each sub-agent has its own counter. For
+the behavior, see
+[Limiting agent steps](/guides/max-steps).
 
 Reaching the cap is not an error. The message ends with `status` `success` and
 `error_code` `null`. Continue with `POST /chat/{thread_id}`.

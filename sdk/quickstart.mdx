@@ -100,7 +100,8 @@ print(await reply.text())
 `max_steps` limits how many tool rounds the agent runs for one message. When
 the cap is reached, the agent recaps and asks whether to continue. The message
 still ends with `status="success"`. The cap applies to that message only, so
-pass it again on a follow-up. See [Capping tool rounds](/guides/max-steps).
+pass it again on a follow-up. Sub-agents have their own counter. See
+[Limiting agent steps](/guides/max-steps).
 
 ```python
 run = await client.chat.start(
