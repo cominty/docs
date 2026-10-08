@@ -4,7 +4,7 @@ description: "Resources, run handles, data models, events, and exceptions"
 ---
 
 This page documents the SDK's public surface. For task-oriented examples, see the
-[Quickstart](/sdk/quickstart) and the [memory guide](/sdk/memory). For the
+[Quickstart](/sdk/quickstart) and the [guides](/guides/memory-namespaces). For the
 underlying HTTP endpoints, see the [API reference](/api-reference).
 
 ## Client
@@ -44,11 +44,11 @@ resolution order.
 | `download_file` | `download_file(file_pid)` | `bytes` (raw file content) |
 
 - `start` returns a `StartedChat`, a run whose `.thread` is guaranteed present.
-  `memory_namespace` is optional and only accepted here. See the
-  [memory guide](/sdk/memory#attach-a-thread-to-a-bag).
-- `max_steps` caps the tool rounds of one message: an integer `>= 1`, or
-  `SERVER_DEFAULT` (the default), which leaves the field out of the request.
-  See [Capping tool rounds](/sdk/max-steps).
+  `memory_namespace` is optional and only accepted here. Passing it to `send`
+  is a `TypeError`. See
+  [Memory namespaces](/guides/memory-namespaces#attach-a-thread-to-a-namespace).
+- `max_steps` caps the tool rounds of one message. See
+  [`max_steps`](#max_steps) below and [Limiting agent steps](/guides/max-steps).
 - `send` returns an `AssistantRun` with no `.thread`. You hold the `thread_id`, and
   `threads.get` fetches the rest. Use it to answer the agent's questions.
 - Invalid arguments raise [`InvalidParams`](#exceptions) **before** any request is
@@ -71,6 +71,32 @@ resolution order.
   yourself. See the [API reference](/api-reference) for the manual steps.
 </Warning>
 
+#### `max_steps`
+
+`max_steps` is a keyword-only argument of `start` and `send`, typed
+`MaxSteps = int | SERVER_DEFAULT`. Import both from `cominty_sdk`:
+
+```python
+from cominty_sdk import SERVER_DEFAULT, MaxSteps
+```
+
+| Value | Result |
+| ----- | ------ |
+| Not passed, or `SERVER_DEFAULT` | The field is left out of the request. The server applies its own default. |
+| Integer `>= 1` | Sent as `options.max_steps`. |
+| `None`, `0`, a negative integer, a float, a bool, or a string | [`InvalidParams`](#exceptions) is raised before any request. |
+
+```python
+from cominty_sdk import InvalidParams
+
+try:
+    await client.chat.start(agent_id=AGENT_ID, message="hi", max_steps=0)
+except InvalidParams as exc:
+    print(exc)
+```
+
+▶ [`examples/10_max_steps.py`](https://github.com/cominty/python-sdk/blob/main/examples/10_max_steps.py)
+
 ### `client.threads`
 
 Scoped to the client's `user_id` automatically. `thread_id` accepts a `str` or a
@@ -86,7 +112,8 @@ Scoped to the client's `user_id` automatically. `thread_id` accepts a `str` or a
 ### `client.memory`
 
 Scoped to a caller-chosen namespace, shared by the API key. Not scoped to
-`user_id`. Walkthrough: [Memory namespaces](/sdk/memory).
+`user_id`. `client.memory` does not send `user_id`. Concepts:
+[Memory namespaces](/guides/memory-namespaces).
 
 | Method   | Signature | Returns |
 | -------- | --------- | ------- |
@@ -122,6 +149,32 @@ Scoped to a caller-chosen namespace, shared by the API key. Not scoped to
   never-existing) path raises [`NotFoundError`](#exceptions) (404) rather
   than succeeding again.
 </Warning>
+
+`list()` with no filter returns every file visible to the API key. Pass
+`namespace=` to keep one namespace. Omitting `namespace` on `create`, `get`,
+`update`, or `delete` is a `TypeError`. `Thread`, `ThreadSummary`, and `Message`
+do not expose the thread's namespace.
+
+#### Migrate from per-user memory
+
+Memory used to be scoped to the client's `user_id`. It is now scoped to a
+namespace you choose. `client.user_id` is still required and still applied to
+chat and threads.
+
+| Before | After |
+| ------ | ----- |
+| `await client.memory.list()` | Still runs, and now returns every namespace for the API key. Pass `namespace=` to filter. |
+| `await client.memory.create(path=..., purpose=..., content=...)` | Add required `namespace=`. |
+| `await client.memory.get(path)` | `await client.memory.get(path, namespace=...)` |
+| `await client.memory.update(path, version=..., content=...)` | Add required `namespace=`. |
+| `await client.memory.delete(path)` | `await client.memory.delete(path, namespace=...)` |
+| No namespace listing | `await client.memory.list_namespaces()` |
+| `chat.start` had no memory argument | Optional `memory_namespace=` on `start` only. |
+
+`MemoryFileOut` and `MemoryFileSummaryOut` each include `namespace`. Use the
+value the API returns. Do not assume a namespace named `default`. For files
+written before namespaces existed, see
+[Memory namespaces](/guides/memory-namespaces#files-written-before-namespaces-existed).
 
 ## The run handle
 

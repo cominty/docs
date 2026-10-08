@@ -1,0 +1,66 @@
+---
+title: "GitHub"
+description: "Register a GitHub OAuth app and connect it to Cominty"
+icon: "github"
+---
+
+Connect GitHub so agents can read and work with your repositories, issues, and
+pull requests.
+
+## Before you start
+
+- You can create an OAuth app on your GitHub account or organization.
+- You have the Cominty callback URL: `https://mcp.cominty.com/v2/oauth/callback`.
+  See [OAuth callback](/mcp/oauth-callback).
+
+## Register the OAuth app
+
+<Steps>
+  <Step title="Open the OAuth apps page">
+    On GitHub, go to **Settings** → **Developer settings** → **OAuth Apps**,
+    then click **New OAuth App**. For an organization, open the organization
+    settings instead.
+  </Step>
+  <Step title="Fill in the form">
+    | Field | Value |
+    | ----- | ----- |
+    | **Application name** | `Cominty` or any name your team recognizes |
+    | **Homepage URL** | `https://cominty.com` |
+    | **Authorization callback URL** | `https://mcp.cominty.com/v2/oauth/callback` |
+  </Step>
+  <Step title="Register">
+    Click **Register application**.
+  </Step>
+  <Step title="Create a client secret">
+    Click **Generate a new client secret**. Copy it now. GitHub shows it once.
+  </Step>
+</Steps>
+
+## Connect it to Cominty
+
+<Steps>
+  <Step title="Add the credentials">
+    Enter the **Client ID** and the **Client secret** in the GitHub integration
+    on [platform.cominty.ai](https://platform.cominty.ai).
+  </Step>
+  <Step title="Authorize">
+    Sign in with GitHub and approve the access.
+  </Step>
+  <Step title="Test it">
+    Ask an agent something that needs GitHub, such as "List the open pull
+    requests in `my-org/my-repo`".
+  </Step>
+</Steps>
+
+<Info>
+  Your organization restricts access by IP? Allowlist the MCP hub address on
+  the [Static IP addresses](/guides/static-ip) page.
+</Info>
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+| ------- | ------------ |
+| `redirect_uri_mismatch` | The callback URL in the GitHub app does not match `https://mcp.cominty.com/v2/oauth/callback` exactly. |
+| Repositories of an organization are missing | The organization has not approved the OAuth app. Ask an owner to approve it under **Third-party access**. |
+| The connection stops working | The client secret was regenerated or deleted. Generate a new one and update Cominty. |

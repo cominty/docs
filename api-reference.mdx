@@ -57,7 +57,7 @@ before the prefix existed has no `sk-cmt-` and keeps working when sent as is.
   parameter. The SDK fills this in from the client, so you never pass it on
   those calls. Memory endpoints may accept `user_id` as an optional query, but
   it does not select a memory namespace. See
-  [Memory on the platform](#memory-on-the-platform).
+  [Memory endpoints](#memory-endpoints).
 </Note>
 
 ## Endpoints
@@ -92,26 +92,12 @@ before the prefix existed has no `sk-cmt-` and keeps working when sent as is.
   endpoint page for its exact response.
 </Warning>
 
-## Memory on the platform
+## Memory endpoints
 
-A memory file belongs to one namespace. The file's identity is the pair
-`(namespace, path)`. The same path in two namespaces is two files. Namespaces
-are shared across the organization for your API token. There is no endpoint
-to create or delete a namespace: the first successful `POST /memory` in a new
-name creates it, and `GET /memory/namespaces` drops the name once it has no
-files left.
-
-```mermaid
-flowchart TD
-  token[API token] --> org[Organization on platform]
-  org --> bags[Shared namespaces]
-  bags --> files["File identity: namespace plus path"]
-  startChat["POST /chat"] --> sent{memory_namespace sent?}
-  sent -->|yes| bound[Thread uses that namespace]
-  sent -->|no| agentNs{Agent already has a namespace?}
-  agentNs -->|yes| bound
-  agentNs -->|no| off[No long-term memory tools]
-```
+Memory files live in a namespace you choose. For the concepts (identity of a
+file, isolating users, attaching a thread), see
+[Memory namespaces](/guides/memory-namespaces). This section covers what is
+specific to the endpoints.
 
 The endpoint pages list `namespace` as optional (max 128 characters). On the
 platform API it is required for create, get, update, and delete: omit it and
@@ -128,32 +114,9 @@ and `content`. The other memory calls send it as a query parameter. `user_id`
 may still appear as an optional query. It does not choose the namespace. A
 `user_id` in the body of `POST /memory` is ignored, with no error.
 
-`GET /memory` returns the most recently updated files first. Without
-`namespace`, the same `path` can appear in several namespaces, so key a file by
-`(namespace, path)`. `GET /memory/namespaces` returns unique names in no
-guaranteed order. Neither call has a pagination or sort parameter.
-
-Limits that still apply: `purpose` is trimmed and must be 1 to 100 characters,
-`content` is at most 1 MiB, and a file named `User.md` has a shorter content
-limit.
-
-`POST /chat` accepts `options.memory_namespace` (max 128 characters). If you
-send it, the thread uses that namespace for its whole life. If you omit it
-and the agent already has a namespace configured on the platform, the thread
-uses that default. Otherwise the thread runs with no long-term memory tools.
-`POST /chat/{thread_id}` has no `memory_namespace` field. A value sent there
-is ignored. Start a new thread to switch namespaces. Thread responses do not
-echo the name: keep the value you sent at start.
-
-You cannot force "no memory" on an agent that already has a namespace. Omitting
-`options.memory_namespace` uses that default. When you send a value on
-`POST /chat`, it wins over the agent's. A thread with no namespace at all runs
-normally, and no field or event says that memory tools are off.
-
-A namespace is shared by everyone in the organization who uses it. `user_id`
-is not part of the scope. To isolate end users, put an identifier in the name
-yourself, for example `support-bot-user_123`. A namespace is not a security
-boundary between agents: do not store a secret that only one agent should see.
+`POST /chat` accepts `options.memory_namespace` (max 128 characters).
+`POST /chat/{thread_id}` has no `memory_namespace` field. A value sent there is
+ignored.
 
 <Warning>
   `path` (in `POST /memory`'s body, and as a query parameter everywhere else)
@@ -182,39 +145,31 @@ boundary between agents: do not store a secret that only one agent should see.
 </Warning>
 
 <Note>
-  After a migration, `GET /memory/namespaces` can still return stored names
-  such as `user_abc::default`. These hold the files written before namespaces
-  existed, one per former user. Pass that exact string back. Do not assume the
-  files now live in a namespace called `default`. Conversations that were
-  already running keep reading that namespace. A new conversation has no memory
-  until it gets a `memory_namespace`.
+  `GET /memory/namespaces` can still return stored names such as
+  `user_abc::default`. They hold files written before namespaces existed. See
+  [Files written before namespaces existed](/guides/memory-namespaces#files-written-before-namespaces-existed).
 </Note>
 
-## Capping tool rounds
+## Tool round cap
 
-`POST /chat` and `POST /chat/{thread_id}` accept `options.max_steps`: the
-maximum number of tool rounds the agent runs for **that message**. Send an
-integer `>= 1`. Omit it and the server applies its default (60 today, and it
-may change). The SDK exposes it as [`max_steps`](/sdk/max-steps).
+`POST /chat` and `POST /chat/{thread_id}` accept `options.max_steps`: an
+integer `>= 1` that caps the tool rounds of **that message**. Omit it and the
+server applies its default (60 today, and it may change). The cap is per
+message and is not stored or returned. Each sub-agent has its own counter. For
+the behavior, see
+[Limiting agent steps](/guides/max-steps).
 
-<Warning>
-  The cap is **per message**, not per thread. A follow-up without `max_steps`
-  runs with the server default, not the value of the previous message. Send it
-  on every message to keep a custom cap. The value is not stored and not
-  returned.
-</Warning>
+Reaching the cap is not an error. The message ends with `status` `success` and
+`error_code` `null`. Continue with `POST /chat/{thread_id}`.
 
-- Reaching the cap is not an error. The message ends with `status` `success`,
-  `error_code` `null`, and a reply that asks whether to continue. No field or
-  event flags it, and the wording is written by the model, so do not parse it.
-  Continue with `POST /chat/{thread_id}`.
-- It is an order of magnitude, not an exact count. The agent can run up to
-  `max_steps + 1` rounds, one round can contain several tool calls, and each
-  sub-agent has its own budget. It limits rounds, not tokens, cost, or time.
-- `null` returns **422** `int_type`. A value below 1 returns **422**
-  `greater_than_equal`. A float or a non-numeric string returns **422**
-  (`int_from_float`, `int_parsing`). Always send a JSON integer. No thread or
-  message is created when the request is rejected.
+| `options.max_steps` | Response |
+| ------------------- | -------- |
+| `null` | **422** `int_type` |
+| Below 1 | **422** `greater_than_equal` |
+| A float | **422** `int_from_float` |
+| A non-numeric string | **422** `int_parsing` |
+
+No thread or message is created when the request is rejected.
 
 ## Files and exports
 
