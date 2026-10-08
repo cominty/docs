@@ -100,7 +100,7 @@ print(await reply.text())
 `max_steps` limits how many tool rounds the agent runs for one message. When
 the cap is reached, the agent recaps and asks whether to continue. The message
 still ends with `status="success"`. The cap applies to that message only, so
-pass it again on a follow-up. See [Capping tool rounds](/sdk/max-steps).
+pass it again on a follow-up. See [Capping tool rounds](/guides/max-steps).
 
 ```python
 run = await client.chat.start(
@@ -181,7 +181,8 @@ await client.threads.archive(thread_id)                               # soft-del
 `client.memory` stores files in a namespace you choose. The same API key shares
 those files across `user_id` values. `update` is partial, and its required
 `version` guards against overwriting a concurrent change. A stale one raises
-`ConflictError`. The full walkthrough is [Memory namespaces](/sdk/memory).
+`ConflictError`. To use the files in a conversation, pass `memory_namespace` to
+`chat.start`. The concepts are in [Memory namespaces](/guides/memory-namespaces).
 
 ```python
 from cominty_sdk import ConflictError
@@ -216,6 +217,12 @@ except ConflictError:
     print("version was stale. Re-fetch and retry")
 
 await client.memory.delete("preferences/tone.md", namespace=namespace)
+
+run = await client.chat.start(
+    agent_id=AGENT_ID,
+    message="Use the tone file.",
+    memory_namespace=namespace,
+)
 ```
 
 ▶ [`examples/09_memory.py`](https://github.com/cominty/python-sdk/blob/main/examples/09_memory.py)

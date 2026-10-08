@@ -105,7 +105,24 @@ sidebar). Put a new endpoint in the group that matches its resource. The intro p
 other pages link to; the endpoint pages are still auto-generated from the spec.
 If `KEEP_PATHS` changes, update this list to match.
 
-The **Python SDK** tab (`sdk/overview`, `sdk/quickstart`, `sdk/memory`, `sdk/max-steps`, `sdk/reference`)
+## Tab structure
+
+Each concept has one home. Do not duplicate it across tabs.
+
+- **Guides** (`index`, `quickstart`, `guides/*`): concepts that apply to both
+  the SDK and the API (memory namespaces, `max_steps`). This is the single
+  source of truth for behavior. Show both surfaces with `<Tabs>` (Python SDK
+  and HTTP).
+- **Python SDK** (`sdk/*`): only what is specific to the SDK (install, auth,
+  signatures, local validation, `InvalidParams`, migration of SDK calls).
+  Link to the guides for concepts.
+- **API Reference**: only what is specific to the endpoints (status codes,
+  query vs body, spec quirks). Link to the guides for concepts.
+
+Old `/sdk/memory` and `/sdk/max-steps` URLs redirect to the guides through
+`redirects` in `docs.json`.
+
+The **Python SDK** tab (`sdk/overview`, `sdk/quickstart`, `sdk/reference`)
 documents the `cominty-sdk` PyPI package. There is no local copy of its
 source. Keep these pages aligned with the SDK's own README and code at
 [github.com/cominty/python-sdk](https://github.com/cominty/python-sdk); check
@@ -128,7 +145,7 @@ there directly whenever the SDK gains or changes public resources.
 
 A few things about the memory endpoints aren't derivable from the spec and
 are easy to get wrong, so they're called out explicitly in `api-reference.mdx`,
-`sdk/memory.mdx`, and `sdk/reference.mdx`:
+`guides/memory-namespaces.mdx`, and `sdk/reference.mdx`:
 
 - On the platform, omitting `namespace` on `POST /memory` or
   `GET`/`PUT`/`DELETE /memory/file` returns 400 `Missing namespace`. The spec

@@ -23,13 +23,20 @@
   "navigation": {
     "tabs": [
       {
-        "tab": "Documentation",
+        "tab": "Guides",
         "groups": [
           {
             "group": "Getting Started",
             "pages": [
               "index",
               "quickstart"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "guides/memory-namespaces",
+              "guides/max-steps"
             ]
           }
         ]
@@ -42,8 +49,6 @@
             "pages": [
               "sdk/overview",
               "sdk/quickstart",
-              "sdk/memory",
-              "sdk/max-steps",
               "sdk/reference"
             ]
           }
@@ -109,6 +114,16 @@
       }
     ]
   },
+  "redirects": [
+    {
+      "source": "/sdk/memory",
+      "destination": "/guides/memory-namespaces"
+    },
+    {
+      "source": "/sdk/max-steps",
+      "destination": "/guides/max-steps"
+    }
+  ],
   "logo": {
     "light": "/logo/cominty-docs-light.svg",
     "dark": "/logo/cominty-docs-dark.svg"
