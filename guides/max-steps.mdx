@@ -1,0 +1,133 @@
+---
+title: "Capping tool rounds"
+description: "Limit how many tool rounds an agent runs for one message with max_steps"
+---
+
+An agent works in **tool rounds**. The model picks one or more tools (web
+search, file write, and so on), the tools run, and the cycle repeats until the
+agent can answer. Long tasks can chain many rounds, which costs time and money.
+`max_steps` caps the number of rounds for **one message**.
+
+Reaching the cap is **not an error**. The agent stops using tools, writes a
+short recap, and asks whether it should continue. The message ends with
+`status` set to `success`. You continue with a normal follow-up in the same
+thread.
+
+This guide explains the concept. It works the same with the
+[Python SDK](/sdk/reference#clientchat) and the [HTTP API](/api-reference).
+
+## Set a cap
+
+Send `max_steps` as an integer `>= 1` with the start request or with a
+follow-up. If you omit it, the server applies its default (60 today, and it may
+change).
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    run = await client.chat.start(
+        agent_id="ag_abc123",
+        message="Research X, then write it up.",
+        max_steps=5,
+    )
+    print(await run.text())
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {"content": "Research X, then write it up."},
+        "options": {
+          "agent_id": "ag_abc123",
+          "user_id": "'"$COMINTY_USER_ID"'",
+          "max_steps": 5
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+There is no "unlimited" value, and there is no upper bound. Choose a sensible
+maximum in your own application.
+
+## Behavior to know
+
+### The cap is per message, not per thread
+
+A follow-up that does not pass `max_steps` runs with the server default,
+whatever the first message used. Pass an integer on every message to keep a
+custom cap.
+
+```python
+run = await client.chat.start(
+    agent_id=AGENT_ID,
+    message="Research X, then write it up.",
+    max_steps=5,
+)
+await run.text()
+
+reply = await client.chat.send(
+    run.thread.id,
+    agent_id=AGENT_ID,
+    message="Yes, continue.",
+    max_steps=10,
+)
+print(await reply.text())
+```
+
+### Hitting the cap looks like a normal success
+
+- The reply ends with `status` set to `success` and `error_code` set to `null`.
+- No field, event, or error code tells you the cap was reached.
+- The recap is written by the model in the conversation language. Do not parse
+  it.
+
+### It is an order of magnitude, not an exact count
+
+- The limit is checked after each round, so the agent can run up to
+  `max_steps + 1` rounds.
+- One round can contain several tool calls.
+- Each sub-agent gets its own budget, so one message can exceed `max_steps`
+  when sub-agents are involved.
+- It limits rounds, not tokens, cost, or duration.
+
+### The value is not readable afterwards
+
+The value is neither stored nor returned for chats. Keep it on your side if you
+need to display it.
+
+## Invalid values
+
+Always send a JSON integer `>= 1`. Nothing is created when a request is
+rejected.
+
+| Value sent | HTTP API | Python SDK |
+| ---------- | -------- | ---------- |
+| `null` | 422 `int_type` | `InvalidParams` |
+| Below 1 | 422 `greater_than_equal` | `InvalidParams` |
+| A float | 422 `int_from_float` | `InvalidParams` |
+| A non-numeric string | 422 `int_parsing` | `InvalidParams` |
+
+## Scope
+
+- `max_steps` exists on `POST /chat` and `POST /chat/{thread_id}`, and on
+  `chat.start` and `chat.send` in the SDK.
+- Routines also accept `max_steps` on the platform, but the SDK and the public
+  API reference do not cover routines.
+- Agents have no `max_steps` setting. Each message carries its own value.
+- The default (60 today) is a server setting. Pass an integer if your
+  integration depends on an exact value.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="API reference" icon="code" href="/api-reference">
+    `options.max_steps` on the chat endpoints.
+  </Card>
+  <Card title="Python SDK reference" icon="book" href="/sdk/reference#clientchat">
+    The `max_steps` argument, `MaxSteps`, and `SERVER_DEFAULT`.
+  </Card>
+</CardGroup>
