@@ -1,0 +1,43 @@
+---
+title: "MCP integrations"
+description: "Connect agents to the tools your team uses through MCP servers"
+---
+
+Cominty agents reach external tools (GitHub, Slack, HubSpot, and more) through
+[MCP](https://modelcontextprotocol.io) servers. Cominty hosts them behind a
+single **MCP hub** at `https://mcp.cominty.com`.
+
+Once an integration is connected to an agent, its tools are available to that
+agent. You do not change any code. You can turn them off per request with
+[`disabled_tools`](/sdk/reference#disabled-tools) (for example `"mcp:slack"` or
+`"mcp:*"`).
+
+## Connect an integration
+
+<Steps>
+  <Step title="Pick the integration">
+    Choose it on [platform.cominty.ai](https://platform.cominty.ai). See the
+    [integration guides](/mcp/integrations/github) for provider-specific steps.
+  </Step>
+  <Step title="Register an OAuth app, if the provider requires it">
+    Some providers ask you to register your own app first. Use the callback URL
+    from [OAuth callback](/mcp/oauth-callback).
+  </Step>
+  <Step title="Authorize">
+    Sign in with the provider and approve the access. Cominty stores the token
+    and the agent can call the tools.
+  </Step>
+</Steps>
+
+<Info>
+  Does the provider restrict access by IP? Allowlist the MCP hub address listed
+  on the [Static IP addresses](/guides/static-ip) page.
+</Info>
+
+## Integrations
+
+<CardGroup cols={2}>
+  <Card title="GitHub" icon="github" href="/mcp/integrations/github">
+    Register a GitHub OAuth app and connect it.
+  </Card>
+</CardGroup>

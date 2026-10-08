@@ -1,0 +1,37 @@
+---
+title: "OAuth callback"
+description: "The callback URL to give a provider when you register an OAuth app"
+---
+
+Most providers use OAuth. Some of them (GitHub, Google, Microsoft Entra, and
+others) ask you to register an application before you can connect. During
+registration they ask for a **redirect URI**, also called a **callback URL**.
+
+Use this one:
+
+```text
+https://mcp.cominty.com/v2/oauth/callback
+```
+
+## Rules
+
+- Paste the URL exactly as shown. Providers compare it character by character.
+- Keep `https` and do not add a trailing slash.
+- Register it as a redirect URI, not as a webhook or homepage URL.
+- Use the same URL for every integration.
+
+## After registering
+
+The provider gives you a **client ID** and a **client secret**. Add both to the
+integration in Cominty. Treat the secret like a password. If it leaks, rotate
+it at the provider.
+
+<Info>
+  Does the provider restrict access by IP? Allowlist the MCP hub address listed
+  on the [Static IP addresses](/guides/static-ip) page.
+</Info>
+
+<Warning>
+  Registering the wrong callback URL is the most common cause of a
+  `redirect_uri_mismatch` error. Check the URL first when authorization fails.
+</Warning>
