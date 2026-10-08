@@ -48,7 +48,7 @@ resolution order.
   is a `TypeError`. See
   [Memory namespaces](/guides/memory-namespaces#attach-a-thread-to-a-namespace).
 - `max_steps` caps the tool rounds of one message. See
-  [`max_steps`](#max_steps) below and [Capping tool rounds](/guides/max-steps).
+  [`max_steps`](#max_steps) below and [Limiting agent steps](/guides/max-steps).
 - `send` returns an `AssistantRun` with no `.thread`. You hold the `thread_id`, and
   `threads.get` fetches the rest. Use it to answer the agent's questions.
 - Invalid arguments raise [`InvalidParams`](#exceptions) **before** any request is
