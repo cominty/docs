@@ -36,7 +36,26 @@
             "group": "Concepts",
             "pages": [
               "guides/memory-namespaces",
-              "guides/max-steps"
+              "guides/max-steps",
+              "guides/static-ip"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "MCP",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "mcp/overview",
+              "mcp/oauth-callback"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "mcp/integrations/github"
             ]
           }
         ]

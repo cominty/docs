@@ -1,0 +1,30 @@
+---
+title: "Static IP addresses"
+description: "The fixed IP addresses Cominty uses in production, for allowlists and firewalls"
+---
+
+Cominty calls out from fixed IP addresses. Add them to your firewall or
+allowlist if a system you connect to restricts incoming traffic.
+
+## Production
+
+| Service | IP address | Region |
+| ------- | ---------- | ------ |
+| API and workers | `35.181.33.151` | Paris, `eu-west-3a` |
+| API and workers | `15.236.199.198` | Paris, `eu-west-3b` |
+| MCP hub | `52.212.77.212` | Dublin, `eu-west-1` |
+
+- **API and workers** serve `ds.cominty.com` and run your agents. Allowlist
+  these addresses if a system the agents reach restricts access by IP.
+- **MCP hub** hosts the [MCP integrations](/mcp/overview). Allowlist this
+  address if an MCP provider restricts access by IP.
+
+<Tip>
+  Not sure which one you need? Allowlist all three. Allowing an address that is
+  not used has no effect.
+</Tip>
+
+<Warning>
+  This page is the reference for Cominty's addresses. Check it first when a
+  connection that worked starts to fail because of your firewall.
+</Warning>
