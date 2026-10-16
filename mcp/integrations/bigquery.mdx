@@ -1,0 +1,190 @@
+---
+title: "Google BigQuery"
+description: "Create a Google OAuth client and connect BigQuery to Cominty"
+icon: "database"
+---
+
+Connect BigQuery so agents can list your datasets and tables, read their
+schemas, and run SQL queries. Cominty uses the remote BigQuery MCP server
+hosted by Google, at `https://bigquery.googleapis.com/mcp`. Google enables it
+when you enable the BigQuery API on your project.
+
+## Before you start
+
+- You have a Google Cloud project with the BigQuery API enabled. A new project
+  has it enabled already.
+- You can create OAuth credentials in that project.
+- The Google account that authorizes the connection has these IAM roles on the
+  project:
+
+  | Role | Why |
+  | ---- | --- |
+  | MCP Tool User (`roles/mcp.toolUser`) | Call MCP tools |
+  | BigQuery Job User (`roles/bigquery.jobUser`) | Run BigQuery jobs |
+  | BigQuery Data Viewer (`roles/bigquery.dataViewer`) | Query BigQuery data |
+
+- You have the Cominty callback URL: `https://mcp.cominty.com/v2/oauth/callback`.
+  See [OAuth callback](/mcp/oauth-callback).
+
+<Tip>
+  Create a separate Google identity for the agents, with only the roles above,
+  so you can control and audit what they reach. BigQuery tools can also need
+  extra permissions on the data they read.
+</Tip>
+
+## Create the OAuth client
+
+<Steps>
+  <Step title="Open the credentials page">
+    In the [Google Cloud console](https://console.cloud.google.com), select
+    your project. Go to **APIs & Services** → **Credentials**, then click
+    **Create credentials** → **OAuth client ID**.
+  </Step>
+  <Step title="Fill in the form">
+    If Google asks you to configure the consent screen first, do it, then come
+    back.
+
+    | Field | Value |
+    | ----- | ----- |
+    | **Application type** | **Web application** |
+    | **Name** | `Cominty` or any name your team recognizes |
+    | **Authorized redirect URIs** | `https://mcp.cominty.com/v2/oauth/callback` |
+  </Step>
+  <Step title="Create the client">
+    Click **Create**. Copy the **Client ID** and the **Client secret**. Treat
+    the secret like a password.
+  </Step>
+</Steps>
+
+Google does not accept custom redirect URIs other than the one you register
+here. Paste the callback URL exactly as shown.
+
+## Connect it to Cominty
+
+<Frame caption="The Google BigQuery integration on the Integrations page of the platform">
+  ![The Google BigQuery integration dialog, with the Availability choice, the Client ID and the Client secret](/images/mcp/bigquery-connect.png)
+</Frame>
+
+<Steps>
+  <Step title="Open the integration">
+    On [platform.cominty.ai](https://platform.cominty.ai), open **Integrations**
+    and choose **Google BigQuery**.
+  </Step>
+  <Step title="Choose who can use it">
+    Under **Availability**, pick **Organization** to share the connection with
+    everyone in your workspace (admins manage it), or **Personal** to keep it
+    private to you.
+  </Step>
+  <Step title="Add the credentials">
+    Under **Configuration**, enter the **Client ID** and the **Client secret**
+    from Google. The OAuth scope is `https://www.googleapis.com/auth/bigquery`.
+  </Step>
+  <Step title="Tell the agent how to use it">
+    Fill in **Agent configuration**. This is where you give the agent your
+    project ID. See [Tell the agent how to use BigQuery](#tell-the-agent-how-to-use-bigquery).
+  </Step>
+  <Step title="Connect">
+    Click **Connect**, sign in with the Google account described above, and
+    approve the access.
+  </Step>
+  <Step title="Test it">
+    Ask an agent something that needs BigQuery, such as "List the datasets in
+    the project `my-project`".
+  </Step>
+</Steps>
+
+<Info>
+  A few MCP integrations need approval on the provider's side before they
+  connect. If the connection fails after you authorize it, or you need help,
+  reach out to Cominty.
+</Info>
+
+## Tell the agent how to use BigQuery
+
+BigQuery questions almost always need details the agent cannot guess: which
+**project ID** to query, which dataset to start from, and which tool to prefer.
+Put them in the integration's **Agent configuration**, once, instead of typing
+them in every message.
+
+<Frame caption="The Agent configuration section: When to use, How to use it, and Permissions">
+  ![The Agent configuration section of the Google BigQuery integration, with the When to use and How to use it fields](/images/mcp/bigquery-agent-configuration.png)
+</Frame>
+
+The two fields do different jobs:
+
+| Field | Read by | Use it for |
+| ----- | ------- | ---------- |
+| **When to use** | The main agent, to decide when to hand a task to BigQuery | The situations and tasks BigQuery covers |
+| **How to use it** | The BigQuery sub-agent that does the work | Project ID, defaults, conventions, constraints |
+
+Write the project ID in **How to use it**. For example:
+
+```text
+The default project is my-analytics-project. This is the project ID, not the project name.
+When the user talks about "the project", use my-analytics-project.
+Start from the dataset sales unless the user names another one.
+Use fully qualified table names, such as `my-analytics-project.sales.orders`.
+Read the table schema with get_table_info before writing a query.
+Prefer execute_sql_readonly. Use execute_sql only if the user clearly asks to change data.
+Add a LIMIT when you explore a table.
+```
+
+To find the project ID, open the [Google Cloud console](https://console.cloud.google.com)
+and click the project selector at the top. The list shows each project's name
+and its **ID**. They are often different. Use the ID.
+
+For the full model (what each field does, how the main agent and the sub-agent
+share the work, and how to write good instructions), see
+[Connector instructions](/mcp/connector-instructions).
+
+## What agents can do
+
+The BigQuery MCP server gives agents these tools:
+
+| Tool | What it does |
+| ---- | ------------ |
+| `list_dataset_ids` | List the datasets of a project |
+| `list_table_ids` | List the tables of a dataset |
+| `get_dataset_info` | Read a dataset's metadata |
+| `get_table_info` | Read a table's metadata and schema |
+| `execute_sql` | Run a SQL query. It can change data. |
+| `execute_sql_readonly` | Run a read-only SQL query |
+
+Example prompts:
+
+- "List the datasets in the project `my-project`."
+- "Find the biggest orders in the dataset `sales` of `my-project`. Pick the right tables, check the schema, and show the results."
+- "Create a forecast for the next months from the table `my-project.sales.orders`."
+
+## Limits
+
+- Queries run for three minutes at most. Longer ones are cancelled.
+- A result holds 3,000 rows at most.
+- `execute_sql_readonly` allows reads only. It refuses data changes (DML),
+  schema changes (DDL), Python user-defined functions, and Graph Query Language
+  (GQL) queries.
+- Neither query tool can read Google Drive external tables.
+- The server has no quota of its own. The quotas of the BigQuery API behind each
+  tool still apply.
+
+## Control what the agent can do
+
+`execute_sql` is the only tool that is not read-only. To block writes, create an
+IAM deny policy on the project that denies the read-write tool. Google
+describes it in its guide to
+[using the BigQuery MCP server](https://docs.cloud.google.com/bigquery/docs/use-bigquery-mcp).
+
+From your code, you can turn the connection off for one message, or limit a
+thread to some connections. See
+[Capabilities](/guides/capabilities) and the
+[use case on connections](/guides/capabilities-use-cases#recipe-3-keep-some-connections-or-none).
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+| ------- | ------------ |
+| `redirect_uri_mismatch` | The redirect URI of the OAuth client is not exactly `https://mcp.cominty.com/v2/oauth/callback`. |
+| A permission error when the agent runs a query | The Google account is missing one of the three IAM roles, or lacks access to the dataset. |
+| `invalid_client` | The client ID or the secret in Cominty is wrong, or the client was deleted. Copy them again from Google. |
+| The answer stops at 3,000 rows, or a query is cancelled | These are limits of the BigQuery MCP server. Ask for aggregated results, or filter the query. |
+| The connection stops working | The OAuth client was deleted or its secret was reset. Create a new one and update Cominty. |

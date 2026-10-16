@@ -1,6 +1,6 @@
 ---
 title: "OAuth callback"
-description: "The callback URL to give a provider when you register an OAuth app"
+description: "What a callback URL is, when you need one, and the one to give a provider when you register an OAuth app"
 ---
 
 Most providers use OAuth. Some of them (GitHub, Google, Microsoft Entra, and
@@ -12,6 +12,70 @@ Use this one:
 ```text
 https://mcp.cominty.com/v2/oauth/callback
 ```
+
+## What a callback URL is
+
+When you connect an integration, you sign in on the provider's own website, not
+on Cominty. The provider never shares your password with Cominty. Instead, once
+you approve the access, it sends your browser back to a web address that you
+registered in advance. That address is the callback URL.
+
+The provider adds a short-lived **code** to the address when it redirects you.
+Cominty receives that code at the callback URL and trades it for an access
+token. The token is what lets agents call the provider's tools.
+
+The provider only redirects to addresses it already knows. That is why it asks
+you to register the callback URL first: it prevents anyone else from receiving
+the code.
+
+## When you need one
+
+You need the callback URL when a provider asks you to register your own OAuth
+app. You paste the URL into the app's form, and the provider gives you a client
+ID and a client secret in return.
+
+| Situation | What to do |
+| --------- | ---------- |
+| The provider asks you to create an app (Google Cloud, for example) | Register the app with the callback URL above, then add the client ID and secret in Cominty. |
+| The integration is already set up for you on the platform | Nothing to register. Click **Authorize**. |
+
+Each provider has its own steps. For Google BigQuery, see the
+[BigQuery guide](/mcp/integrations/bigquery).
+
+## How it fits in the flow
+
+```mermaid
+sequenceDiagram
+  participant You
+  participant Platform as Cominty platform
+  participant Provider as Provider (for example Google)
+  participant Hub as Cominty MCP hub
+  participant Agent
+
+  You->>Platform: Click Authorize on the integration
+  Platform->>Provider: Send you to the provider's sign-in page
+  You->>Provider: Sign in and approve the access
+  Provider->>Hub: Redirect to the callback URL with a code
+  Hub->>Provider: Trade the code and your client secret for a token
+  Provider-->>Hub: Access token
+  Hub->>Hub: Store the token
+  Note over You,Hub: The integration is connected
+  Agent->>Hub: Call a tool, for example list pull requests
+  Hub->>Provider: Request with the stored token
+  Provider-->>Agent: Result
+```
+
+{/* ILLUSTRATION: mcp-oauth-callback-flow */}
+
+1. You click **Authorize**. Your browser goes to the provider.
+2. You sign in with the provider and approve the access.
+3. The provider redirects your browser to the callback URL, with a code.
+4. The MCP hub trades the code, together with your client secret, for a token.
+5. Cominty stores the token. From then on, agents call the provider's tools with
+   it, and you never repeat steps 1 to 4 unless the token is revoked.
+
+The callback URL only matters at step 3. If it does not match what you
+registered, the provider stops the flow there.
 
 ## Rules
 
@@ -25,6 +89,15 @@ https://mcp.cominty.com/v2/oauth/callback
 The provider gives you a **client ID** and a **client secret**. Add both to the
 integration in Cominty. Treat the secret like a password. If it leaks, rotate
 it at the provider.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+| ------- | ------------ |
+| `redirect_uri_mismatch` | The callback URL in the provider's app is not exactly `https://mcp.cominty.com/v2/oauth/callback`. Check the scheme, the path, and the trailing slash. |
+| `invalid_client` | The client ID or the client secret in Cominty is wrong, or the secret was regenerated. Copy them again from the provider. |
+| `access_denied` | You declined the access on the provider's page, or an organization admin has to approve the app first. |
+| The connection worked, then stopped | The token was revoked, or the client secret was rotated at the provider. Authorize again. |
 
 <Info>
   Does the provider restrict access by IP? Allowlist the MCP hub address listed

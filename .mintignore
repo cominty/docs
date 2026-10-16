@@ -3,5 +3,6 @@
 # README.md, LICENSE.md, CHANGELOG.md, CONTRIBUTING.md
 
 # Draft content
+draft/
 drafts/
 *.draft.mdx

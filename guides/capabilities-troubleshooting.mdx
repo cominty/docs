@@ -1,0 +1,260 @@
+---
+title: "Capabilities troubleshooting and migration"
+description: "Move from disabled_tools and memory_namespace to capabilities, and understand each error"
+---
+
+This page covers two things: how to move your code to capabilities (SDK 1.0.0),
+and what each error means when a call fails.
+
+{/* ILLUSTRATION: capabilities-migration-before-after */}
+
+## Migrate from SDK 0.5.0
+
+SDK 1.0.0 removes four arguments of `chat.start` and `chat.send`. Their job is
+now done by `message_scope` and `thread_capabilities`.
+
+| Removed | Replaced by |
+| ------- | ----------- |
+| `disabled_tools` on `start` and `send` | `message_scope` |
+| `source_ids` on `start` and `send` | `message_scope` |
+| `document_ids` on `start` and `send` | `message_scope` |
+| `memory_namespace` on `start` | `thread_capabilities` with `MemoryCapability` |
+| `DisablableTool`, and the matching `HumanMessage` fields | Nothing: use the scope classes |
+
+### Message filters
+
+| Before (0.5.0) | After (1.0.0) |
+| -------------- | ------------- |
+| `disabled_tools=["web"]` | `MessageScope(web=WebScope(enabled=False))` |
+| `disabled_tools=["company_documents"]` | `MessageScope(indexed_documents=IndexedDocumentsScope(enabled=False))` |
+| `disabled_tools=["mcp:*"]` | `MessageScope(mcp=McpScope(enabled=False))` |
+| `disabled_tools=["mcp:notion"]` | `MessageScope(mcp=McpScope(enabled=True, connections=[...]))`, where the list holds the connections you keep |
+| `source_ids=[101]` | `MessageScope(indexed_documents=IndexedDocumentsScope(enabled=True, source_ids=[101]))` |
+| `document_ids=[...]` | `MessageScope(indexed_documents=IndexedDocumentsScope(enabled=True, document_ids=[...]))` |
+
+`disabled_tools` was a list of things to turn off. A scope is a list of things
+to change, so "everything except Notion" becomes "these connections".
+
+```python
+# before (0.5.0)
+await client.chat.start(
+    agent_id=AGENT_ID,
+    message="Summarize the board deck",
+    disabled_tools=["web"],
+    source_ids=[101],
+)
+```
+
+```python
+# now (1.0.0)
+from cominty_sdk import IndexedDocumentsScope, MessageScope, WebScope
+
+await client.chat.start(
+    agent_id=AGENT_ID,
+    message="Summarize the board deck",
+    message_scope=MessageScope(
+        web=WebScope(enabled=False),
+        indexed_documents=IndexedDocumentsScope(enabled=True, source_ids=[101]),
+    ),
+)
+```
+
+### Memory namespace
+
+```python
+# before (0.5.0)
+await client.chat.start(
+    agent_id=AGENT_ID,
+    message="Use the tone file.",
+    memory_namespace="support-bot",
+)
+```
+
+```python
+# now (1.0.0)
+from cominty_sdk import AgentCapabilities, MemoryCapability
+
+await client.chat.start(
+    agent_id=AGENT_ID,
+    message="Use the tone file.",
+    thread_capabilities=AgentCapabilities(
+        memory=MemoryCapability(activation="always", namespace="support-bot"),
+    ),
+)
+```
+
+### The HTTP API
+
+The HTTP API still accepts the old fields, but they are deprecated and will be
+removed in a later version. Each one maps to a new field:
+
+| Deprecated field | Replacement |
+| ---------------- | ----------- |
+| `options.memory_namespace` | `options.capabilities.memory` |
+| `message.disabled_tools` | `message.scope.<capability>.enabled` |
+| `message.source_ids` | `message.scope.indexed_documents.source_ids` |
+| `message.document_ids` | `message.scope.indexed_documents.document_ids` |
+
+Do not send an old field and a new one in the same object. The request fails
+with a 422:
+
+- `options.capabilities` with `options.memory_namespace`
+- `message.scope` with `disabled_tools`, `source_ids` or `document_ids`
+
+On an agent that has capabilities set, the old message fields are checked
+against the thread's capabilities too, and can return a 422.
+
+## Where an error comes from
+
+There are two kinds of errors, and they happen at different times.
+
+| | Local `InvalidParams` | Server 422 `APIError` |
+| - | --------------------- | --------------------- |
+| When | When you build the object, or call the method | When the server receives the request |
+| Request sent | No | Yes, and rejected |
+| Cause | The value is invalid on its own | The value is valid, but not allowed on this thread |
+| Fix | Change the value in your code | Change the request, or start a new thread |
+
+{/* ILLUSTRATION: capabilities-error-map */}
+
+### Local `InvalidParams`
+
+The SDK checks every capability and scope object when you create it. Nothing is
+sent. The message names the argument and the reason.
+
+| You wrote | Message |
+| --------- | ------- |
+| `WebCapability(activation="sometimes")` | `activation: Input should be 'always', 'on_request' or 'never'` |
+| `SkillsCapability(activation="on_request")` | `activation: Input should be 'always' or 'never'` |
+| `McpCapability(activation="always", connections=None)` | `connections: None is not accepted: pass ALL ('*') for no restriction, or a non-empty list` |
+| `McpCapability(activation="always", connections=[])` | `connections: an empty list is ambiguous: pass ALL for no restriction, or turn the capability off instead` |
+| `SkillsCapability(activation="always", include=["*"])` | `include: '*' inside a list is not accepted: pass ALL on its own for every id` |
+| `IndexedDocumentsCapability(activation="never", source_ids=[1])` | `source_ids: not accepted when the capability is off: it takes no filter` |
+| `McpScope(enabled=False, connections=["linear"])` | `connections: not accepted when the capability is off: it takes no filter` |
+| `MemoryCapability(activation="always")` | `namespace is required when activation='always'` |
+| `MemoryCapability(activation="never", namespace="x")` | `namespace is not accepted with activation='never': memory is off` |
+| `AgentCapabilities(web=True)` | `Input should be a valid dictionary or instance of WebCapability` |
+| `MessageScope(web=False)` | `Input should be a valid dictionary or instance of WebScope` |
+
+Catch it like any other SDK error:
+
+```python
+from cominty_sdk import InvalidParams, McpCapability
+
+try:
+    McpCapability(activation="always", connections=[])
+except InvalidParams as exc:
+    for problem in exc.errors:
+        print(problem["param"], problem["message"])
+```
+
+### Server-side 422 `APIError`
+
+The server compares your message with the thread's capabilities. A scope can
+only narrow them. These three cases are refused:
+
+| Cause | What the server says |
+| ----- | -------------------- |
+| You widen a list | `scope.indexed_documents requests [...], which is not a subset of the AgentCapabilities allowlist [...]. MessageScope cannot widen the allowlist.` The same applies to `scope.mcp`, with the connection names quoted. |
+| You target a capability the thread does not have | `scope.<name> is set on the message, but the thread AgentCapabilities does not include it (omitted, or activation=never). Add <name> to AgentCapabilities with activation always or on_request first.` `enabled=False` on such a capability returns the same error. |
+| You turn off a capability that is already off | `scope.<name>.enabled is false, but <name> already defaults to off (activation=on_request). Omit the key, or set enabled to true to use it this message.` |
+
+```python
+from cominty_sdk import APIError
+
+try:
+    await client.chat.send(
+        thread_id,
+        agent_id=AGENT_ID,
+        message="Search another source.",
+        message_scope=message_scope,
+    )
+except APIError as exc:
+    print(exc.status_code, exc.detail)
+```
+
+The error names `scope.<name>`, even if you sent the older `source_ids` field.
+
+<Note>
+  The server returns the error `detail` in two shapes. A list when the request
+  body is malformed, and a plain string when the policy refuses it, as above.
+  Handle both if you call the HTTP API directly.
+</Note>
+
+### `TypeError`
+
+`chat.send` has no `thread_capabilities`, and neither method accepts the
+removed arguments. Python raises a `TypeError` before the SDK runs:
+
+```python
+await client.chat.send(
+    thread_id,
+    agent_id=AGENT_ID,
+    message="hi",
+    thread_capabilities=capabilities,  # TypeError: unexpected keyword argument
+)
+```
+
+On HTTP, `options.capabilities` on `POST /chat/{thread_id}` returns a 422.
+
+## Common mistakes
+
+### Trying to change capabilities on `chat.send`
+
+The thread's capabilities are frozen when it starts. `chat.send` only accepts
+`message_scope`, which narrows one message. To use other capabilities, start a
+new thread.
+
+### Using old and new fields together
+
+On HTTP, `message.scope` together with `disabled_tools`, `source_ids` or
+`document_ids` fails with a 422. In the SDK, the old arguments no longer exist.
+Move everything to the new ones.
+
+### Passing `True`, `False`, or a string
+
+There are no shortcuts. `web=True`, `web="never"`, and `MessageScope(web=False)`
+all raise `InvalidParams`. Use `WebCapability(activation="never")` and
+`WebScope(enabled=False)`.
+
+### Losing the agent's `source_ids`
+
+A capability you pass replaces the agent's version entirely. If you redefine
+`indexed_documents` with only `document_ids`, the agent's `source_ids` go back to
+`ALL`. Repeat every filter you want to keep. See
+[Override an agent for one thread](/guides/capabilities#override-an-agent-for-one-thread).
+
+### A capability stays on because you did not mention it
+
+Capabilities you do not pass keep the agent's value. If the agent has web
+search on, it stays on until you pass `WebCapability(activation="never")`.
+
+### An id that matches nothing
+
+The API does not check source ids, document ids, connection names, or skill ids
+on a chat. A wrong id is accepted and finds nothing. If the agent answers that it
+sees no documents, or no Linear, check the id and the name against the platform.
+See [Find your ids](/guides/capabilities#find-your-ids).
+
+### Expecting a scope to last
+
+A scope applies to one message. The next message without a scope goes back to
+the thread's capabilities. Send the scope again on every message that needs it.
+This is also true of `on_request`: it is off unless the message turns it on.
+
+### Expecting the agent's `never` to be a lock
+
+`thread_capabilities` can turn on a capability that the agent sets to `never`. If
+you must keep a capability away from some callers, do not give them the API key
+of an agent that has it.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Capabilities" icon="book-open" href="/guides/capabilities">
+    The definitions, activation modes, and filters.
+  </Card>
+  <Card title="Use cases" icon="lightbulb" href="/guides/capabilities-use-cases">
+    Recipes from one message to a full thread policy.
+  </Card>
+</CardGroup>

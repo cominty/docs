@@ -114,9 +114,10 @@ and `content`. The other memory calls send it as a query parameter. `user_id`
 may still appear as an optional query. It does not choose the namespace. A
 `user_id` in the body of `POST /memory` is ignored, with no error.
 
-`POST /chat` accepts `options.memory_namespace` (max 128 characters).
-`POST /chat/{thread_id}` has no `memory_namespace` field. A value sent there is
-ignored.
+A thread's memory namespace is a capability: send
+`options.capabilities.memory` on `POST /chat`. See [Capabilities](#capabilities).
+`options.memory_namespace` still works but is deprecated.
+`POST /chat/{thread_id}` accepts neither.
 
 <Warning>
   `path` (in `POST /memory`'s body, and as a query parameter everywhere else)
@@ -150,6 +151,79 @@ ignored.
   [Files written before namespaces existed](/guides/memory-namespaces#files-written-before-namespaces-existed).
 </Note>
 
+## Capabilities
+
+Capabilities decide what the agent can use: `web`, `indexed_documents`, `mcp`,
+`skills`, `image_generation`, `video_generation`, `music_generation`, and
+`memory`. For the concepts, see [Capabilities](/guides/capabilities). This
+section covers what is specific to the endpoints.
+
+| Field | Endpoint | Lasts |
+| ----- | -------- | ----- |
+| `options.capabilities` | `POST /chat` | The whole thread. Frozen at start. |
+| `message.scope` | `POST /chat` and `POST /chat/{thread_id}` | One message |
+
+```bash
+curl -X POST "https://ds.cominty.com/chat" \
+  -H "x-cominty-token: $COMINTY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": {
+      "content": "Summarize the open tickets",
+      "scope": {"web": {"enabled": true}}
+    },
+    "options": {
+      "agent_id": "'"$AGENT_ID"'",
+      "user_id": "'"$COMINTY_USER_ID"'",
+      "capabilities": {
+        "web": {"activation": "on_request"},
+        "mcp": {"activation": "always", "connections": ["linear"]},
+        "memory": {"activation": "always", "namespace": "support-bot"}
+      }
+    }
+  }'
+```
+
+- Each capability in `options.capabilities` is an object with a required
+  `activation`: `always`, `on_request`, or `never`. `skills` and `memory` accept
+  only `always` and `never`. A `never` entry takes no other field.
+- A capability you send replaces the agent's value **entirely**. An omitted
+  filter goes back to `"*"` (no restriction). A capability you do not send keeps
+  the agent's value.
+- Filters (`source_ids`, `document_ids`, `connections`, `include`) are either the
+  string `"*"` or a list with at least one item. `null` and `[]` return 422.
+- Each entry in `message.scope` is an object with a required `enabled`. The
+  `skills` and `memory` keys return 422.
+- A scope can only narrow. It must stay inside the thread's list.
+- `options.capabilities` on `POST /chat/{thread_id}` returns 422. The OpenAPI
+  schema lists the field there, but a follow-up cannot change the thread.
+- The thread's capabilities are not returned by any endpoint.
+
+| Thread activation | `enabled: true` | `enabled: false` | No scope |
+| ----------------- | --------------- | ---------------- | -------- |
+| `always` | On | Off for this message | On |
+| `on_request` | On for this message | 422, already off | Off |
+| `never`, or not set | 422 | 422 | Off |
+
+### Errors
+
+The error `detail` has two shapes.
+
+| Status | `detail` | Cause |
+| ------ | -------- | ----- |
+| **422** | A list of objects with `type`, `loc`, `msg` | The body is malformed: unknown key, missing `activation` or `enabled`, empty filter, or `scope.skills` |
+| **422** | A string | The policy refuses the message: the scope widens a list, targets a capability the thread does not have, or turns off one that is already off |
+
+Mixing the new and the legacy fields also returns **422**:
+`options.capabilities` with `options.memory_namespace`, or `message.scope` with
+`message.disabled_tools`, `message.source_ids` or `message.document_ids`. The
+legacy fields are deprecated and will be removed in a later version.
+
+<Warning>
+  Ids and names in filters are not checked. An unknown source id, document id,
+  connection name, or skill id is accepted and matches nothing.
+</Warning>
+
 ## Tool round cap
 
 `POST /chat` and `POST /chat/{thread_id}` accept `options.max_steps`: an
@@ -171,7 +245,49 @@ Reaching the cap is not an error. The message ends with `status` `success` and
 
 No thread or message is created when the request is rejected.
 
+## One message at a time
+
+A thread processes **one message at a time**. After `POST /chat` or
+`POST /chat/{thread_id}`, the assistant message is `pending` (`live: true`). It
+only finishes when you read its events to the end with
+`GET /chat/messages/{message_id}/stream`, or when you cancel it. Until then,
+posting another message to the same thread returns **400**:
+
+```json
+{"detail": "Cannot process multiple messages at the same time"}
+```
+
+| The previous message was | `POST /chat/{thread_id}` |
+| ------------------------ | ------------------------ |
+| Read to the end through the stream endpoint | **200** |
+| Cancelled with `POST /chat/messages/{message_id}/cancel`, even if you never read its events | **200** |
+| Never read, or the stream connection was closed early, and not cancelled | **400**, still pending |
+
+Closing the stream connection does not stop the message. The server keeps it
+pending. To free the thread:
+
+1. Find the pending message: `GET /chat/{thread_id}` returns each message with
+   `live`. A message with `live: true` is still pending.
+2. Read it to the end with `GET /chat/messages/{message_id}/stream`, or cancel it
+   with `POST /chat/messages/{message_id}/cancel`.
+3. Post the next message.
+
+This 400 is not the concurrency rate limit, which returns **429** `Too many
+concurrent requests` when your plan's limit on simultaneous chats is reached.
+
+## Cancel and export a message
+
+| Call | Success | Errors |
+| ---- | ------- | ------ |
+| `POST /chat/messages/{message_id}/cancel` | **200**, the message with `status` `cancelled` | **400** `Message is not live`: the message finished, failed, was already cancelled, or is a user message. **404**: unknown message. |
+| `GET /chat/messages/{message_id}/export?format=pdf` | **200**, the file bytes | **400** `Message has no content`, for example a message still running. **404**: unknown message. **422**: `format` is not `pdf` or `docx`. |
+
+Cancelling is not idempotent: a second cancel returns **400**. The export
+response carries no file name. Choose one when you save the bytes.
+
 ## Files and exports
+
+{/* ILLUSTRATION: files-presigned-upload-flow */}
 
 <Warning>
   Uploading a file is a **3-step flow**, not a single call:
@@ -199,6 +315,16 @@ No thread or message is created when the request is rejected.
   bytes (a PDF or DOCX), not JSON. The response `content-type` shown on this
   page is a placeholder from the spec, not what you'll actually receive.
 </Warning>
+
+Limits to plan for:
+
+- A file is at most 500 MiB on the hosted API. The storage host refuses a bigger
+  one, and another deployment may set a lower limit.
+- Your organization has a daily upload quota. When it is used up, the storage
+  host refuses the upload.
+- The download URL is short-lived (5 minutes). Fetch it right away.
+- No endpoint lists or deletes uploaded files.
+- A presigned URL carries a signature in its query string. Do not log it.
 
 Each endpoint page below includes a live playground. Add your token and try a
 real request.

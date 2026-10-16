@@ -110,12 +110,12 @@ If `KEEP_PATHS` changes, update this list to match.
 Each concept has one home. Do not duplicate it across tabs.
 
 - **Guides** (`index`, `quickstart`, `guides/*`): concepts that apply to both
-  the SDK and the API (memory namespaces, `max_steps`). This is the single
+ the SDK and the API (capabilities, memory namespaces, `max_steps`). This is the single
   source of truth for behavior. Show both surfaces with `<Tabs>` (Python SDK
   and HTTP).
 - **MCP** (`mcp/*`): how to connect external tools. `mcp/overview` and
   `mcp/oauth-callback` are general. Each provider gets one page in
-  `mcp/integrations/` (copy `github.mdx` as the template) and an entry in the
+  `mcp/integrations/` (copy `bigquery.mdx` as the template) and an entry in the
   **Integrations** group of `docs.json`. The OAuth callback URL is
   `https://mcp.cominty.com/v2/oauth/callback`. Link to `/guides/static-ip`
   for allowlisting instead of repeating the IPs.
@@ -162,10 +162,13 @@ are easy to get wrong, so they're called out explicitly in `api-reference.mdx`,
 - `user_id` is an optional query on memory endpoints, including `POST /memory`.
   It is not in the create body, and it does not select the bag. The SDK does
   not send it on memory calls. Chat start still sends `options.user_id`.
-- `options.memory_namespace` exists only on `POST /chat`. The follow-up
-  `POST /chat/{thread_id}` does not accept it. If neither the start request
-  nor the agent already has a namespace, the thread runs without memory tools.
-  Do not document `/agents` in the public spec.
+- A thread's namespace is the `memory` capability: `options.capabilities.memory`
+ on `POST /chat` (SDK: `MemoryCapability` in `thread_capabilities`). The
+ follow-up `POST /chat/{thread_id}` does not accept it. If neither the start
+ request nor the agent already has a namespace, the thread runs without memory
+ tools. `options.memory_namespace` still works on HTTP but is deprecated, and
+ cannot be sent with `options.capabilities`. Do not document `/agents` in the
+ public spec. Agents are configured on the platform, **Agents** page.
 - `PUT /memory/file` can't clear a field: sending `content: null` or
   `purpose: null` returns 200 but leaves the existing value untouched (the
   `version` doesn't change either) instead of clearing it. The SDK rejects an
@@ -180,6 +183,81 @@ are easy to get wrong, so they're called out explicitly in `api-reference.mdx`,
 - A malformed `version` (not a real timestamp) returns 422, not 409.
   `version` is a real datetime server-side even though it should be treated
   as an opaque string everywhere else.
+
+## Capabilities behavior not covered by the OpenAPI spec
+
+Capabilities arrived with SDK 1.0.0 (ENG-996). The pages are
+`guides/capabilities`, `guides/capabilities-use-cases`, and
+`guides/capabilities-troubleshooting`. These facts are not in the spec and are
+easy to get wrong:
+
+- `options.capabilities` replaces **only the capabilities it contains**, and each
+  one **entirely**. An omitted filter inside a sent capability goes back to
+  `"*"`. A capability that is not sent keeps the agent's value, so `web` stays on
+  until `web` is sent with `never`.
+- `options.capabilities` is not gated by the agent: a thread can turn on a
+  capability the agent sets to `never`. Never present `never` on an agent as a
+  security barrier.
+- `POST /chat/{thread_id}` lists `options.capabilities` in the spec but returns
+  422. The SDK has no `thread_capabilities` on `chat.send` (`TypeError`).
+- `message.scope` has no `skills` or `memory` (422). `enabled: false` on an
+  `on_request` capability returns 422. Widening a list, or targeting a
+  capability the thread lacks, returns 422 with a string `detail`. A malformed
+  body returns 422 with a list `detail`.
+- Filter ids and names are not validated on chats. A wrong id matches nothing.
+- No endpoint returns the capabilities frozen on a thread.
+- Legacy fields (`memory_namespace`, `disabled_tools`, `source_ids`,
+  `document_ids`) are deprecated on HTTP and removed from the SDK. Mixing them
+  with the new fields returns 422. The sanitize script sets `deprecated: true`.
+- Where users find ids: `source_ids` on platform.cominty.ai/knowledge (the
+  **ID** under each source name). `document_ids` are not shown yet: the docs tell
+  users to ask an agent. MCP `connections` and skill `include` ids come from the
+  **Integrations** and **Skills** pages. Replace the document id workaround once
+  the platform shows them.
+- The SDK's `file_ids` limit is 5, while the spec allows 20.
+
+## Cancel, export and files (SDK 1.1.0)
+
+`chat.cancel`, `chat.export`, `chat.upload_file` and `chat.download_file` are
+documented in `sdk/quickstart` (tasks), `sdk/reference` (signatures, errors) and
+`api-reference` (status codes, limits). Facts verified against production:
+
+- Cancel and export return 400 (`Message is not live`, `Message has no content`).
+  A second cancel always fails. Export with a missing or bad `format` is 422.
+- The SDK rejects a plain `str` in `upload_file` and any file over 500 MiB
+  (`InvalidParams`). Download is not scoped to `user_id`.
+- Links to `examples/12_*`, `13_*`, `14_*` point to `main`.
+
+## One message at a time
+
+A thread processes one message at a time. A message stays `pending` until its
+events are read to the end, or until it is cancelled. Leaving a stream early
+(`aclose`, leaving `async with run:`, dropping the run) does not stop it. Then
+`chat.send` returns 400 `Cannot process multiple messages at the same time`.
+A cancelled message frees the thread without reading its events. Every doc
+snippet that calls `chat.send` after `chat.start` must read the first reply
+(`await run.text()`) or cancel it first. Documented in `sdk/reference`,
+`sdk/quickstart` and `api-reference`.
+
+## Images
+
+Follow [Mintlify's image guide](https://www.mintlify.com/docs/create/image-embeds):
+
+- Store images in `images/`. Reference them with a root-relative path
+  (`/images/mcp/file.png`). Relative paths such as `./file.png` do not work.
+- Always write descriptive alt text. Keep each file under 20 MB.
+- Wrap images in `<Frame>`, with a `caption` when it helps.
+- For illustrations with a light and a dark variant, use two `<img>` tags:
+  `className="block dark:hidden"` for the light one, and
+  `className="hidden dark:block"` for the dark one.
+- GIFs, SVGs and externally hosted images are served as is, so compress them
+  first. Mintlify optimizes PNG and JPEG itself.
+- Image files are stored with Git LFS (see `.gitattributes`).
+
+Illustrations are named `<id>-light.png` and `<id>-dark.png`. Until an image
+exists, the page keeps a `{/* ILLUSTRATION: id */}` comment and a mermaid
+diagram. The specs are in `draft/illustrations-brief.md`, which is not
+published.
 
 ## Public-repo hygiene (open items: confirm with maintainer)
 
