@@ -254,10 +254,12 @@ Follow [Mintlify's image guide](https://www.mintlify.com/docs/create/image-embed
   first. Mintlify optimizes PNG and JPEG itself.
 - Image files are stored with Git LFS (see `.gitattributes`).
 
-Illustrations are named `<id>-light.png` and `<id>-dark.png`. Until an image
-exists, the page keeps a `{/* ILLUSTRATION: id */}` comment and a mermaid
-diagram. The specs are in `draft/illustrations-brief.md`, which is not
-published.
+Two validated illustrations are in `images/capabilities/` (activation modes and
+find your source id, each with a `-light` and a `-dark` file). The other pages
+use mermaid diagrams and real screenshots (`images/mcp/`), with no placeholder
+comment. A candidate illustration brief lives in
+`draft/illustrations-brief.md`, which is not published. Do not add an image
+before its quality is validated.
 
 ## Public-repo hygiene (open items: confirm with maintainer)
 
