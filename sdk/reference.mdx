@@ -35,41 +35,110 @@ resolution order.
 
 | Method   | Signature | Returns |
 | -------- | --------- | ------- |
-| `start`  | `start(*, agent_id, message, name=None, file_ids=None, source_ids=None, document_ids=None, disabled_tools=None, memory_namespace=None, max_steps=SERVER_DEFAULT)` | `StartedChat` |
-| `send`   | `send(thread_id, *, message, agent_id, file_ids=None, source_ids=None, document_ids=None, disabled_tools=None, max_steps=SERVER_DEFAULT)` | `AssistantRun` |
+| `start`  | `start(*, agent_id, message, name=None, file_ids=None, thread_capabilities=None, message_scope=None, max_steps=SERVER_DEFAULT)` | `StartedChat` |
+| `send`   | `send(thread_id, *, message, agent_id, file_ids=None, message_scope=None, max_steps=SERVER_DEFAULT)` | `AssistantRun` |
 | `stream` | `stream(message_id)` | `AssistantRun` (no I/O until consumed) |
 | `cancel` | `cancel(message_id)` | `Message` (`status` becomes `cancelled`) |
 | `export` | `export(message_id, *, format)` | `bytes` (raw file content) |
-| `upload_file` | `upload_file(content, *, filename, mimetype)` | `ConversationFile` |
-| `download_file` | `download_file(file_pid)` | `bytes` (raw file content) |
+| `upload_file` | `upload_file(file, *, filename=None, mimetype=None)` | `ConversationFile` |
+| `download_file` | `download_file(file_id)` | `bytes` (raw file content) |
 
 - `start` returns a `StartedChat`, a run whose `.thread` is guaranteed present.
-  `memory_namespace` is optional and only accepted here. Passing it to `send`
-  is a `TypeError`. See
-  [Memory namespaces](/guides/memory-namespaces#attach-a-thread-to-a-namespace).
+  `thread_capabilities` is optional and only accepted here. Passing it to `send`
+  is a `TypeError`. `message_scope` is accepted by both. See
+  [Capabilities](#capabilities).
 - `max_steps` caps the tool rounds of one message. See
   [`max_steps`](#max_steps) below and [Limiting agent steps](/guides/max-steps).
 - `send` returns an `AssistantRun` with no `.thread`. You hold the `thread_id`, and
   `threads.get` fetches the rest. Use it to answer the agent's questions.
+  Read the previous message to the end, or cancel it, before you call `send`:
+  see [One message at a time](#one-message-at-a-time).
 - Invalid arguments raise [`InvalidParams`](#exceptions) **before** any request is
   sent.
 
-<Note>
-  `export`'s `format` is `"pdf"` or `"docx"`. `upload_file`'s `content` is
-  either raw `bytes` or a path (`str`/`pathlib.Path`) to read them from;
-  `filename` is limited to 255 characters and can't contain `/`, checked
-  locally before any request.
-</Note>
+#### Stop a message
+
+`cancel` stops an assistant message that is still being generated. It returns
+the message with `status` set to `cancelled`. What the agent produced before the
+stop stays in `events`.
+
+| Case | Result |
+| ---- | ------ |
+| The message is running | Returns the `Message`, `status` is `cancelled` |
+| The message finished, failed, or was already cancelled | [`APIError`](#exceptions) (400, `Message is not live`) |
+| A user message | [`APIError`](#exceptions) (400): user messages are never live |
+| An unknown message | [`NotFoundError`](#exceptions) (404) |
+| `message_id` is not a UUID | `ValueError` (`message_id must be a UUID, got 'x'`) |
+
+`cancel` is not idempotent. A "stop" button should treat the 400 as "too late,
+nothing to stop". A cancelled message frees the thread right away: you can send
+the next message without reading the cancelled message's events. See
+[One message at a time](#one-message-at-a-time).
+
+▶ [`examples/12_cancel_message.py`](https://github.com/cominty/python-sdk/blob/main/examples/12_cancel_message.py)
+
+#### Export a message: `export`
+
+`export(message_id, *, format)` renders a message to a document and returns the
+raw bytes. `format` is `"pdf"` or `"docx"` (type `ExportFormat`, importable from
+`cominty_sdk`).
+
+| Case | Result |
+| ---- | ------ |
+| A message with content | The file as `bytes` |
+| Any other `format` | [`InvalidParams`](#exceptions) before any request |
+| A message with no content, for example one still running | [`APIError`](#exceptions) (400, `Message has no content`) |
+| An unknown message | [`NotFoundError`](#exceptions) (404) |
+
+The server sends no file name. Pick one when you write the bytes.
+
+▶ [`examples/13_export_message.py`](https://github.com/cominty/python-sdk/blob/main/examples/13_export_message.py)
+
+#### Upload and download files
+
+`upload_file` registers a file and returns a `ConversationFile`. Pass its `id`
+in `file_ids` on `start` and `send`, at most 5 files per message.
+
+| `file` | `filename` | Result |
+| ------ | ---------- | ------ |
+| A `pathlib.Path` | Optional. Defaults to the file's name. | Name and mimetype are inferred |
+| `bytes` | Required | The mimetype is guessed from the name |
+| A plain `str`, or anything else | - | [`InvalidParams`](#exceptions): a `str` is ambiguous between a path and text, so wrap a path in `Path(...)` |
+
+- `filename` is 1 to 255 characters and cannot contain `/`.
+- `mimetype` is optional. It is guessed from the file name, with
+  `application/octet-stream` as a fallback. An empty string is refused.
+- A file is at most 500 MiB. A bigger one raises
+  [`InvalidParams`](#exceptions) before anything is sent.
+- A path that cannot be read raises `OSError`.
+- The whole file is held in memory, in both directions.
+
+`download_file(file_id)` returns the bytes of any conversation file, including
+the ones the agent produced. An empty `file_id` raises `ValueError`. An unknown
+file raises [`NotFoundError`](#exceptions). The call is not scoped to the
+client's `user_id`: any file created through the API in your organization can be
+downloaded.
 
 <Warning>
-  `upload_file` orchestrates 3 HTTP calls, not one: it requests a presigned
-  upload permission, uploads your content directly to that storage URL (a
-  different host, so no Cominty token is sent there), then confirms the upload
-  with Cominty. `download_file` similarly follows a presigned URL to a
-  different host to fetch the bytes. Both are single SDK calls; the
-  multi-step flow only matters if you're calling the raw HTTP endpoints
-  yourself. See the [API reference](/api-reference) for the manual steps.
+  `upload_file` makes 3 calls: it requests a presigned upload permission,
+  sends your bytes **directly to the storage host**, then confirms the upload
+  with Cominty. `download_file` also fetches from a presigned URL. Your API key
+  is only sent to the Cominty API, never to the storage host. Storage calls
+  never follow redirects, and a presigned signature never appears in an error
+  message. A storage refusal raises [`APIError`](#exceptions) with the storage
+  reason as its message, for example `EntityTooLarge`. The multi-step flow only
+  matters if you call the HTTP endpoints yourself. See
+  [Files and exports](/api-reference#files-and-exports).
 </Warning>
+
+<Note>
+  The API has no call to list or delete uploaded files, and it enforces a daily
+  upload quota per organization. Another deployment can also set a lower size
+  limit. `httpx` logs full request URLs at `INFO`, presigned signatures
+  included, so keep its logger at `WARNING`.
+</Note>
+
+▶ [`examples/14_upload_files.py`](https://github.com/cominty/python-sdk/blob/main/examples/14_upload_files.py)
 
 #### `max_steps`
 
@@ -169,7 +238,7 @@ chat and threads.
 | `await client.memory.update(path, version=..., content=...)` | Add required `namespace=`. |
 | `await client.memory.delete(path)` | `await client.memory.delete(path, namespace=...)` |
 | No namespace listing | `await client.memory.list_namespaces()` |
-| `chat.start` had no memory argument | Optional `memory_namespace=` on `start` only. |
+| `chat.start` had no memory argument | `thread_capabilities=AgentCapabilities(memory=MemoryCapability(activation="always", namespace=...))` on `start` only. See [Memory](#memory). |
 
 `MemoryFileOut` and `MemoryFileSummaryOut` each include `namespace`. Use the
 value the API returns. Do not assume a namespace named `default`. For files
@@ -191,12 +260,59 @@ way).
 | `await run.questions()` | the agent's clarifying `Question`s, or `[]` |
 | `run.message_id` | the assistant message id (`UUID`) |
 | `run.thread` | the `Thread` (`StartedChat` only; absent on a bare `AssistantRun`) |
-| `async with run:` / `await run.aclose()` | release the stream early |
+| `async with run:` / `await run.aclose()` | release the stream early. It does **not** stop the message: see [One message at a time](#one-message-at-a-time) |
 
 <Warning>
   A run raises [`StreamInterrupted`](#exceptions) (carrying `.partial`) if the
   server shuts down mid-stream.
 </Warning>
+
+### One message at a time
+
+A thread processes **one message at a time**. A message stays `pending` until
+you read its events to the end, or cancel it. If you start a message and walk
+away, the thread stays busy, and the next `chat.send` fails with
+[`APIError`](#exceptions) (400, `Cannot process multiple messages at the same
+time`).
+
+| What happened to the previous message | Next `chat.send` |
+| ------------------------------------- | ---------------- |
+| You read it to the end: `await run.result()`, `await run.text()`, or an `async for` that ran to the end | Works |
+| You cancelled it with [`chat.cancel`](#stop-a-message), even without reading its events | Works |
+| You dropped the run, or left the `async for` early, and did not cancel | **400**, the message is still pending |
+| You closed the stream with `run.aclose()`, or left an `async with run:` block, and did not cancel | **400**: closing the stream does not stop the message |
+
+Leaving a stream early only releases the connection. The message keeps running
+on the server. To stop reading and free the thread, cancel:
+
+```python
+async with run:
+    async for event in run:
+        if user_clicked_stop():
+            await client.chat.cancel(run.message_id)
+            break
+```
+
+Use `async with run:` whenever you can leave the loop early. It closes the
+stream cleanly. Without it, Python can print "asynchronous generator" errors
+when the half-read stream is garbage collected.
+
+If you lost the run, or an earlier call left a message unread, free the thread
+by reading it. `Message.live` tells you which messages are still pending:
+
+```python
+thread = await client.threads.get(thread_id)
+for message in thread.messages:
+    if message.live:
+        await client.chat.stream(message.id).result()  # drains it, or cancel it
+
+reply = await client.chat.send(thread_id, agent_id=AGENT_ID, message="Next question")
+```
+
+`thread.live` is `True` while any message is pending. A 400 from `chat.send`
+that says `Cannot process multiple messages at the same time` always means this.
+It is not the concurrency rate limit (`RateLimitError` with scope
+`concurrency`, HTTP 429), which counts simultaneous chats across all threads.
 
 ## Data models
 
@@ -248,20 +364,108 @@ unknown fields, so they are forward-compatible.
   Returned by `memory.list`. Everything in `MemoryFileOut` except `content`.
 </ResponseField>
 
-## `disabled_tools`
+## Capabilities
 
-Passed to `chat.start` and `chat.send`. Tools are **on by default**; each entry
-turns one off:
+Capabilities replace `disabled_tools`, `source_ids`, `document_ids`, and
+`memory_namespace`, which SDK 1.0.0 removes. Concepts and recipes:
+[Capabilities](/guides/capabilities) and
+[Use cases](/guides/capabilities-use-cases). To move old code, see
+[Migrate from SDK 0.5.0](/guides/capabilities-troubleshooting#migrate-from-sdk-050).
 
-| Value | Meaning |
-| ----- | ------- |
-| `"web"` | disable web search |
-| `"company_documents"` | disable company-document retrieval |
-| `"mcp:<server>"` | disable one MCP server, e.g. `"mcp:slack"` |
-| `"mcp:*"` | disable all MCP servers |
+```python
+from cominty_sdk import (
+    ALL,
+    AgentCapabilities,
+    ImageGenerationCapability,
+    ImageGenerationScope,
+    IndexedDocumentsCapability,
+    IndexedDocumentsScope,
+    McpCapability,
+    McpScope,
+    MemoryCapability,
+    MessageScope,
+    MusicGenerationCapability,
+    MusicGenerationScope,
+    SkillsCapability,
+    VideoGenerationCapability,
+    VideoGenerationScope,
+    WebCapability,
+    WebScope,
+)
+```
 
-The SDK validates the `mcp:` arm locally and rejects anything else (with
-[`InvalidParams`](#exceptions)) before sending.
+| Argument | On | Type | Lasts |
+| -------- | -- | ---- | ----- |
+| `thread_capabilities` | `chat.start` only | `AgentCapabilities` | The whole thread. Frozen at start. |
+| `message_scope` | `chat.start` and `chat.send` | `MessageScope` | One message |
+
+### `AgentCapabilities`
+
+Every field is optional and defaults to `None`. A field you do not pass keeps
+the agent's value. A field you pass replaces the agent's value entirely.
+
+| Field | Class | `activation` | Filters (default `ALL`) |
+| ----- | ----- | ------------ | ----------------------- |
+| `web` | `WebCapability` | `always`, `on_request`, `never` | - |
+| `indexed_documents` | `IndexedDocumentsCapability` | `always`, `on_request`, `never` | `source_ids: list[int]`, `document_ids: list[str]` |
+| `mcp` | `McpCapability` | `always`, `on_request`, `never` | `connections: list[str]` |
+| `skills` | `SkillsCapability` | `always`, `never` | `include: list[str]` |
+| `image_generation` | `ImageGenerationCapability` | `always`, `on_request`, `never` | - |
+| `video_generation` | `VideoGenerationCapability` | `always`, `on_request`, `never` | - |
+| `music_generation` | `MusicGenerationCapability` | `always`, `on_request`, `never` | - |
+| `memory` | `MemoryCapability` | `always`, `never` | `namespace: str` (see [Memory](#memory)) |
+
+`activation` is required on every capability. There are no shortcuts: `web=True`
+and `web="never"` raise [`InvalidParams`](#exceptions).
+
+### `MessageScope`
+
+Every field is optional and defaults to `None`.
+
+| Field | Class | Filters (default `ALL`) |
+| ----- | ----- | ----------------------- |
+| `web` | `WebScope` | - |
+| `indexed_documents` | `IndexedDocumentsScope` | `source_ids`, `document_ids` |
+| `mcp` | `McpScope` | `connections` |
+| `image_generation` | `ImageGenerationScope` | - |
+| `video_generation` | `VideoGenerationScope` | - |
+| `music_generation` | `MusicGenerationScope` | - |
+
+`enabled: bool` is required on every scope. There is no scope for `skills` or
+`memory`. A scope can turn a capability on or off, or narrow a filter. It can
+never widen what the thread allows.
+
+### `ALL` and filters
+
+`ALL` is the string `"*"`: no restriction. It is the default of every filter, so
+passing it only makes the intent explicit. A filter is either `ALL` or a
+non-empty list.
+
+| Value | Result |
+| ----- | ------ |
+| Not passed, or `ALL` | No restriction |
+| A non-empty list | Allowlist |
+| `None`, `[]`, or `"*"` inside a list | [`InvalidParams`](#exceptions) before any request |
+| Any filter with `activation="never"` or `enabled=False` | [`InvalidParams`](#exceptions) before any request |
+
+### Memory
+
+`MemoryCapability(activation="always", namespace=...)` attaches the thread to a
+memory bag. The `namespace` is required and is 1 to 128 characters.
+`MemoryCapability(activation="never")` runs the thread without memory and takes
+no namespace. Without a `memory` entry, the thread uses the agent's namespace, or
+runs without memory if the agent has none. The bag is frozen for the thread: a
+follow-up cannot change it. See [Memory namespaces](/guides/memory-namespaces).
+
+### Errors
+
+Invalid objects raise [`InvalidParams`](#exceptions) as soon as you build them.
+The server answers 422 ([`APIError`](#exceptions)) when a message widens an
+allowlist, targets a capability the thread does not have, or sets
+`enabled=False` on an `on_request` capability. See
+[Troubleshooting](/guides/capabilities-troubleshooting#where-an-error-comes-from).
+
+▶ [`examples/11_capabilities.py`](https://github.com/cominty/python-sdk/blob/main/examples/11_capabilities.py)
 
 ## Streamed events
 

@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cominty/cominty",
-    "description": "\n### Cominty Meta:\n\n```json\n{\n  \"VERSION_TAG\": \"eng-997-add-organization-scoped-memory-namespaces.6928eb8\",\n  \"VERSION_AT\": \"2026-10-07T14:46:28+02:00\",\n  \"DEPLOYED_BY\": \"github-actions::elfominty\",\n  \"DEPLOYED_AT\": \"2026-10-07T13:06:50Z\",\n  \"AWS_SECRET_NAME\": \"cominty-monorepo-dev-python-api\",\n  \"AWS_SECRET_VERSION\": \"3de071f4-5485-4bf2-a676-0f72bf7aa59f\",\n  \"AWS_SECRET_REGION\": \"eu-west-3\"\n}\n```\n",
-    "version": "eng-997-add-organization-scoped-memory-namespaces.6928eb8"
+    "description": "\n### Cominty Meta:\n\n```json\n{\n  \"VERSION_TAG\": \"main.7b78f8e\",\n  \"VERSION_AT\": \"2026-10-15T18:17:32+02:00\",\n  \"DEPLOYED_BY\": \"github-actions::jgourinda-cominty\",\n  \"DEPLOYED_AT\": \"2026-10-16T09:24:22Z\",\n  \"AWS_SECRET_NAME\": \"cominty-monorepo-production-python-api\",\n  \"AWS_SECRET_VERSION\": \"0ced4c2d-272e-47b6-91f1-ce0031637157\",\n  \"AWS_SECRET_REGION\": \"eu-west-3\"\n}\n```\n",
+    "version": "main.7b78f8e"
   },
   "paths": {
     "/chat/files/{file_pid}": {
@@ -194,7 +194,7 @@
             }
           }
         },
-        "description": "Start a conversation and post the first message. The response is the full thread. Send options.agent_id and options.user_id. options.memory_namespace binds the thread to a memory namespace for its whole life. Omit it and the thread uses the namespace already set on the agent, if any. Otherwise the thread runs without long-term memory tools. options.max_steps caps the tool rounds of the first assistant message. Omit it and the server applies its default, currently 60."
+        "description": "Start a conversation and post the first message. The response is the full thread. Send options.agent_id and options.user_id. options.capabilities overrides some of the agent's capabilities for the whole life of the thread, memory included. Each capability you send replaces the agent's value entirely, and the others keep the agent's value. message.scope turns a capability on or off, or narrows its allowlist, for this first message only. Omit options.capabilities and the thread follows the agent. options.max_steps caps the tool rounds of the first assistant message. Omit it and the server applies its default, currently 60."
       },
       "get": {
         "tags": [
@@ -500,7 +500,7 @@
             }
           }
         },
-        "description": "Post a message in an existing thread. The response is the new message, not the thread. This call does not accept memory_namespace. The namespace chosen when the thread started stays in effect. options.max_steps caps the tool rounds of this message only. Omit it and the server default applies again, not the value of the previous message."
+        "description": "Post a message in an existing thread. The response is the new message, not the thread. message.scope narrows the thread's capabilities for this message only: it can turn one off, or shrink an allowlist, but never widen them. options.capabilities is rejected with 422: the thread's capabilities, memory included, were frozen when it started. options.max_steps caps the tool rounds of this message only. Omit it and the server default applies again, not the value of the previous message."
       }
     },
     "/chat/messages/{message_id}/export": {
@@ -558,7 +558,7 @@
             }
           }
         },
-        "description": "Export a message as a PDF or DOCX. The response body is the file bytes, not JSON. format is pdf or docx."
+        "description": "Export a message as a PDF or DOCX. The response body is the file bytes, not JSON, and carries no file name. format is pdf or docx. A message with no content, for example one still running, returns 400 Message has no content."
       }
     },
     "/chat/messages/{message_id}/stream": {
@@ -667,7 +667,7 @@
             }
           }
         },
-        "description": "Cancel an in-flight assistant message. The response is the message with status cancelled."
+        "description": "Cancel an in-flight assistant message. The response is the message with status cancelled. A message that is not running (finished, failed, already cancelled, or a user message) returns 400 Message is not live, so a second cancel always fails."
       }
     },
     "/memory": {
@@ -686,6 +686,7 @@
               "anyOf": [
                 {
                   "type": "string",
+                  "minLength": 1,
                   "maxLength": 128
                 },
                 {
@@ -883,6 +884,7 @@
               "anyOf": [
                 {
                   "type": "string",
+                  "minLength": 1,
                   "maxLength": 128
                 },
                 {
@@ -971,6 +973,7 @@
               "anyOf": [
                 {
                   "type": "string",
+                  "minLength": 1,
                   "maxLength": 128
                 },
                 {
@@ -1058,6 +1061,7 @@
               "anyOf": [
                 {
                   "type": "string",
+                  "minLength": 1,
                   "maxLength": 128
                 },
                 {
@@ -1107,6 +1111,155 @@
   },
   "components": {
     "schemas": {
+      "AgentCapabilities": {
+        "properties": {
+          "web": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SingleAgentCapability"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "indexed_documents": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/InstalledIndexedDocumentsAgentCapability"
+                  },
+                  {
+                    "$ref": "#/components/schemas/NeverAgentCapability"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "activation",
+                  "mapping": {
+                    "always": "#/components/schemas/InstalledIndexedDocumentsAgentCapability",
+                    "never": "#/components/schemas/NeverAgentCapability",
+                    "on_request": "#/components/schemas/InstalledIndexedDocumentsAgentCapability"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexed Documents"
+          },
+          "mcp": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/InstalledMCPAgentCapability"
+                  },
+                  {
+                    "$ref": "#/components/schemas/NeverAgentCapability"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "activation",
+                  "mapping": {
+                    "always": "#/components/schemas/InstalledMCPAgentCapability",
+                    "never": "#/components/schemas/NeverAgentCapability",
+                    "on_request": "#/components/schemas/InstalledMCPAgentCapability"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp"
+          },
+          "skills": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/InstalledSkillsAgentCapability"
+                  },
+                  {
+                    "$ref": "#/components/schemas/NeverAgentCapability"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "activation",
+                  "mapping": {
+                    "always": "#/components/schemas/InstalledSkillsAgentCapability",
+                    "never": "#/components/schemas/NeverAgentCapability"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skills"
+          },
+          "image_generation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SingleAgentCapability"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "video_generation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SingleAgentCapability"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "music_generation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SingleAgentCapability"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AlwaysMemoryAgentCapability"
+                  },
+                  {
+                    "$ref": "#/components/schemas/NeverAgentCapability"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "activation",
+                  "mapping": {
+                    "always": "#/components/schemas/AlwaysMemoryAgentCapability",
+                    "never": "#/components/schemas/NeverAgentCapability"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AgentCapabilities"
+      },
       "AgentDetail": {
         "properties": {
           "id": {
@@ -1159,6 +1312,16 @@
             "$ref": "#/components/schemas/Scope-Input",
             "default": "private"
           },
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "execution_options": {
             "anyOf": [
               {
@@ -1193,7 +1356,8 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 128
+                "maxLength": 128,
+                "minLength": 1
               },
               {
                 "type": "null"
@@ -1248,6 +1412,16 @@
             ],
             "title": "Description"
           },
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "execution_options": {
             "anyOf": [
               {
@@ -1290,6 +1464,7 @@
           "id",
           "name",
           "description",
+          "capabilities",
           "execution_options",
           "memory_namespace",
           "managed",
@@ -1345,6 +1520,16 @@
               }
             ]
           },
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "execution_options": {
             "anyOf": [
               {
@@ -1370,7 +1555,8 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 128
+                "maxLength": 128,
+                "minLength": 1
               },
               {
                 "type": "null"
@@ -1382,6 +1568,29 @@
         "additionalProperties": false,
         "type": "object",
         "title": "AgentUpdate"
+      },
+      "AlwaysMemoryAgentCapability": {
+        "properties": {
+          "activation": {
+            "type": "string",
+            "const": "always",
+            "title": "Activation"
+          },
+          "namespace": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Namespace",
+            "description": "Memory namespace the thread reads and writes. 1 to 128 characters."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "activation",
+          "namespace"
+        ],
+        "title": "AlwaysMemoryAgentCapability"
       },
       "ApiTokenIn": {
         "properties": {
@@ -1695,6 +1904,17 @@
             "title": "Max Steps",
             "default": 60,
             "description": "Maximum tool rounds the agent may run for this message. Integer, at least 1. Omit it to use the server default, currently 60. It is not carried over from the previous message. Reaching the cap is not an error: the message still ends with status success."
+          },
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Not accepted on a follow-up: the request returns 422. The thread's capabilities were frozen when it started. Use message.scope to narrow one message, or start a new thread."
           }
         },
         "type": "object",
@@ -2174,7 +2394,9 @@
                 "type": "null"
               }
             ],
-            "title": "Source Ids"
+            "title": "Source Ids",
+            "description": "Deprecated. Use scope.indexed_documents.source_ids instead.",
+            "deprecated": true
           },
           "document_ids": {
             "anyOf": [
@@ -2188,7 +2410,9 @@
                 "type": "null"
               }
             ],
-            "title": "Document Ids"
+            "title": "Document Ids",
+            "description": "Deprecated. Use scope.indexed_documents.document_ids instead.",
+            "deprecated": true
           },
           "disabled_tools": {
             "anyOf": [
@@ -2214,7 +2438,9 @@
                 "type": "null"
               }
             ],
-            "title": "Disabled Tools"
+            "title": "Disabled Tools",
+            "description": "Deprecated. Use scope instead, for example scope.web.enabled set to false.",
+            "deprecated": true
           },
           "content": {
             "type": "string",
@@ -2228,7 +2454,7 @@
                   "type": "string"
                 },
                 "type": "array",
-                "maxItems": 5,
+                "maxItems": 20,
                 "uniqueItems": true
               },
               {
@@ -2236,6 +2462,17 @@
               }
             ],
             "title": "File Ids"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessageScope"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Turns a capability on or off, or narrows its allowlist, for this message only. It can never widen what the thread allows. Cannot be sent together with source_ids, document_ids or disabled_tools (422)."
           }
         },
         "type": "object",
@@ -2243,6 +2480,182 @@
           "content"
         ],
         "title": "HumanMessage"
+      },
+      "IndexedDocumentsMessageScope": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "true turns document search on for this message, false turns it off. A filter is only accepted when enabled is true."
+          },
+          "source_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "string",
+                "const": "*"
+              }
+            ],
+            "title": "Source Ids",
+            "default": "*",
+            "description": "Narrows the thread's source allowlist for this message. Must be a subset of it. \"*\" keeps the thread allowlist."
+          },
+          "document_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "string",
+                "const": "*"
+              }
+            ],
+            "title": "Document Ids",
+            "default": "*",
+            "description": "Focuses this message on these documents. \"*\" means no document filter."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "IndexedDocumentsMessageScope"
+      },
+      "InstalledIndexedDocumentsAgentCapability": {
+        "properties": {
+          "activation": {
+            "type": "string",
+            "enum": [
+              "always",
+              "on_request"
+            ],
+            "title": "Activation",
+            "description": "always or on_request. Use never on its own to turn the capability off."
+          },
+          "source_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "string",
+                "const": "*"
+              }
+            ],
+            "title": "Source Ids",
+            "default": "*",
+            "description": "Allowlist of document source ids, or \"*\" for every source the user can read. At least one id when it is a list."
+          },
+          "document_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "string",
+                "const": "*"
+              }
+            ],
+            "title": "Document Ids",
+            "default": "*",
+            "description": "Allowlist of document ids, or \"*\" for no restriction. At least one id when it is a list."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "activation"
+        ],
+        "title": "InstalledIndexedDocumentsAgentCapability"
+      },
+      "InstalledMCPAgentCapability": {
+        "properties": {
+          "activation": {
+            "type": "string",
+            "enum": [
+              "always",
+              "on_request"
+            ],
+            "title": "Activation",
+            "description": "always or on_request. Use never on its own to turn the capability off."
+          },
+          "connections": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "string",
+                "const": "*"
+              }
+            ],
+            "title": "Connections",
+            "default": "*",
+            "description": "Allowlist of MCP connection names, or \"*\" for every connection of the user. At least one name when it is a list."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "activation"
+        ],
+        "title": "InstalledMCPAgentCapability"
+      },
+      "InstalledSkillsAgentCapability": {
+        "properties": {
+          "activation": {
+            "type": "string",
+            "const": "always",
+            "title": "Activation"
+          },
+          "include": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "string",
+                "const": "*"
+              }
+            ],
+            "title": "Include",
+            "default": "*",
+            "description": "Allowlist of skill ids, or \"*\" for every active skill the user can read. At least one id when it is a list."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "activation"
+        ],
+        "title": "InstalledSkillsAgentCapability"
       },
       "LLMModelChainIn": {
         "properties": {
@@ -2891,6 +3304,39 @@
         ],
         "title": "LangchainClassInfo"
       },
+      "MCPMessageScope": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "true turns MCP on for this message, false turns every connection off."
+          },
+          "connections": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "string",
+                "const": "*"
+              }
+            ],
+            "title": "Connections",
+            "default": "*",
+            "description": "Narrows the thread's connections for this message. Must be a subset of them. \"*\" keeps the thread allowlist."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "MCPMessageScope"
+      },
       "MaybePartial_MessageOut_": {
         "anyOf": [
           {
@@ -2922,7 +3368,8 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 128
+                "maxLength": 128,
+                "minLength": 1
               },
               {
                 "type": "null"
@@ -3195,6 +3642,73 @@
         ],
         "title": "MessageOut"
       },
+      "MessageScope": {
+        "properties": {
+          "web": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SingleMessageScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "indexed_documents": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IndexedDocumentsMessageScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mcp": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MCPMessageScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "image_generation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SingleMessageScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "video_generation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SingleMessageScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "music_generation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SingleMessageScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MessageScope"
+      },
       "MessageStatus": {
         "type": "string",
         "enum": [
@@ -3440,6 +3954,21 @@
           "new_position"
         ],
         "title": "MoveModelInChainIn"
+      },
+      "NeverAgentCapability": {
+        "properties": {
+          "activation": {
+            "type": "string",
+            "const": "never",
+            "title": "Activation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "activation"
+        ],
+        "title": "NeverAgentCapability"
       },
       "OAuthAuthorizationURLOut": {
         "properties": {
@@ -4136,6 +4665,41 @@
         ],
         "title": "SharepointSite"
       },
+      "SingleAgentCapability": {
+        "properties": {
+          "activation": {
+            "type": "string",
+            "enum": [
+              "always",
+              "on_request",
+              "never"
+            ],
+            "title": "Activation",
+            "description": "always: on for every message. on_request: off until a message turns it on with scope. never: unavailable."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "activation"
+        ],
+        "title": "SingleAgentCapability"
+      },
+      "SingleMessageScope": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "true turns an on_request capability on for this message. false turns an always capability off for this message."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "SingleMessageScope"
+      },
       "SkillFrontmatter": {
         "properties": {
           "name": {
@@ -4561,14 +5125,27 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 128
+                "maxLength": 128,
+                "minLength": 1
               },
               {
                 "type": "null"
               }
             ],
             "title": "Memory Namespace",
-            "description": "Namespace the thread may read and update. At most 128 characters. Omit it to use the agent's namespace, or to run without memory tools when the agent has none. The follow-up message call cannot change it."
+            "description": "Deprecated. Use capabilities.memory instead. Cannot be sent together with capabilities (422). At most 128 characters.",
+            "deprecated": true
+          },
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Overrides some of the agent's capabilities for the whole life of the thread. Each capability you send replaces the agent's value entirely, so an omitted filter goes back to \"*\". Capabilities you do not send keep the agent's value. Memory is a capability: send memory with activation always and a namespace, or never to run without memory. The result is frozen on the thread."
           }
         },
         "type": "object",
@@ -5403,6 +5980,16 @@
             ],
             "title": "Description"
           },
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "execution_options": {
             "anyOf": [
               {
@@ -5467,6 +6054,7 @@
           "id",
           "name",
           "description",
+          "capabilities",
           "execution_options",
           "memory_namespace",
           "managed",

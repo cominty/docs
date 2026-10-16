@@ -1,0 +1,771 @@
+---
+title: "Capabilities use cases"
+description: "Recipes that show what changes in an agent's behavior when you add, remove, or narrow a capability"
+---
+
+Each recipe below starts from a goal, shows the call, and explains what the
+agent does and does not do. They go from the simplest (one message) to the most
+complete (a thread policy plus per-message changes).
+
+If you want the definitions first, read [Capabilities](/guides/capabilities).
+
+{/* ILLUSTRATION: capabilities-hero */}
+
+## Before you start
+
+Every snippet runs inside an `AsyncCominty` context and uses these
+placeholders. Replace them with your own values.
+
+```python
+import asyncio
+
+from cominty_sdk import AsyncCominty
+
+AGENT_ID = "__cominty_agents::agent.chat"  # or the id of your own agent
+SOURCE_ID = 2292  # copied from platform.cominty.ai/knowledge, the ID of a source
+OTHER_SOURCE_ID = 2293  # a second source
+SKILL_ID = "your-skill-id"  # copied from the Skills page of the platform
+
+
+async def main():
+    async with AsyncCominty() as client:  # COMINTY_API_KEY + COMINTY_USER_ID
+        ...  # paste a recipe here
+
+
+asyncio.run(main())
+```
+
+The agent in these examples has web search, document search, and one MCP
+integration (Linear) available. Where a recipe says "the agent can", it means
+the agent can use it if the question calls for it. A capability that is on does
+not force the agent to use it.
+
+<Tip>
+  Not sure where to find an id? See [Find your ids](/guides/capabilities#find-your-ids).
+</Tip>
+
+## Recipe 1: skip the web for one message
+
+**Goal:** "Answer this question from what you know. Do not search the web."
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import MessageScope, WebScope
+
+    run = await client.chat.start(
+        agent_id=AGENT_ID,
+        message="In two sentences, what is the MCP protocol?",
+        message_scope=MessageScope(web=WebScope(enabled=False)),
+    )
+    print(await run.text())
+
+    # Next message, no scope: web search is available again.
+    follow_up = await client.chat.send(
+        run.thread.id,
+        agent_id=AGENT_ID,
+        message="Now check the latest version of the spec online.",
+    )
+    print(await follow_up.text())
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {
+          "content": "In two sentences, what is the MCP protocol?",
+          "scope": {"web": {"enabled": false}}
+        },
+        "options": {
+          "agent_id": "'"$AGENT_ID"'",
+          "user_id": "'"$COMINTY_USER_ID"'"
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+▶ [`examples/11_capabilities.py`](https://github.com/cominty/python-sdk/blob/main/examples/11_capabilities.py)
+
+**Expected behavior:** The agent answers the first question without any web
+search tool call, even though its question is the kind it would normally look
+up. It still has every other capability: it could search your documents or call
+Linear if the question needed it. On the second message you sent no scope, so
+web search is back and the agent can check the spec online.
+
+## Recipe 2: answer from one source, then one document
+
+**Goal:** "Summarize only the 2024 board deck."
+
+Start by limiting the message to the source that holds your board decks. Copy
+the source **ID** from the [Documents page](https://platform.cominty.ai/knowledge).
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import IndexedDocumentsScope, MessageScope
+
+    run = await client.chat.start(
+        agent_id=AGENT_ID,
+        message="Which board decks do you have access to? Give each document id.",
+        message_scope=MessageScope(
+            indexed_documents=IndexedDocumentsScope(
+                enabled=True,
+                source_ids=[SOURCE_ID],
+            ),
+        ),
+    )
+    print(await run.text())
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {
+          "content": "Which board decks do you have access to? Give each document id.",
+          "scope": {"indexed_documents": {"enabled": true, "source_ids": [2292]}}
+        },
+        "options": {
+          "agent_id": "'"$AGENT_ID"'",
+          "user_id": "'"$COMINTY_USER_ID"'"
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+The platform does not show document ids yet. The agent can tell you: the
+question above makes it list the documents it finds, with their ids. Copy the id
+of the 2024 deck, then pin the next message to that document:
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    DOCUMENT_ID = "2292#8058"  # the id the agent gave you
+
+    reply = await client.chat.send(
+        run.thread.id,
+        agent_id=AGENT_ID,
+        message="Summarize the 2024 board deck in five bullet points.",
+        message_scope=MessageScope(
+            indexed_documents=IndexedDocumentsScope(
+                enabled=True,
+                document_ids=[DOCUMENT_ID],
+            ),
+        ),
+    )
+    print(await reply.text())
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat/$THREAD_ID" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {
+          "content": "Summarize the 2024 board deck in five bullet points.",
+          "scope": {"indexed_documents": {"enabled": true, "document_ids": ["2292#8058"]}}
+        },
+        "options": {"agent_id": "'"$AGENT_ID"'"}
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+▶ [`examples/11_capabilities.py`](https://github.com/cominty/python-sdk/blob/main/examples/11_capabilities.py)
+
+**Expected behavior:** In the first message, the agent searches only the source
+you named. Documents from your other sources cannot show up in its answer, even
+if they mention board decks. In the second message, it reads only the 2024 deck
+and summarizes that one file. A different message in the same thread, without
+the scope, searches every source again.
+
+<Note>
+  A scope that carries only `document_ids` focuses the message on those
+  documents. It does not keep the thread's `source_ids`.
+</Note>
+
+## Recipe 3: keep some connections, or none
+
+**Goal:** "Answer without calling Linear." Or: "Use Linear, but not Slack."
+
+The agent has Linear and Slack connected. Turn MCP off for one message:
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import McpScope, MessageScope
+
+    run = await client.chat.start(
+        agent_id=AGENT_ID,
+        message="Give me a short status update for the team.",
+        message_scope=MessageScope(mcp=McpScope(enabled=False)),
+    )
+    print(await run.text())
+
+    # Next message, no scope: Linear and Slack are available again.
+    follow_up = await client.chat.send(
+        run.thread.id,
+        agent_id=AGENT_ID,
+        message="Now check Linear for what is in progress.",
+    )
+    print(await follow_up.text())
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {
+          "content": "Give me a short status update for the team.",
+          "scope": {"mcp": {"enabled": false}}
+        },
+        "options": {
+          "agent_id": "'"$AGENT_ID"'",
+          "user_id": "'"$COMINTY_USER_ID"'"
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+To keep only some connections, list them:
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    run = await client.chat.start(
+        agent_id=AGENT_ID,
+        message="List the tasks assigned to me this sprint.",
+        message_scope=MessageScope(
+            mcp=McpScope(enabled=True, connections=["linear"]),
+        ),
+    )
+    print(await run.text())
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {
+          "content": "List the tasks assigned to me this sprint.",
+          "scope": {"mcp": {"enabled": true, "connections": ["linear"]}}
+        },
+        "options": {
+          "agent_id": "'"$AGENT_ID"'",
+          "user_id": "'"$COMINTY_USER_ID"'"
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+▶ [`examples/08_mcp_linear.py`](https://github.com/cominty/python-sdk/blob/main/examples/08_mcp_linear.py)
+
+**Expected behavior:** With `enabled=False`, the agent has Linear connected but
+answers without calling it. It writes the status update from the conversation
+alone. On the next message, with no scope, it can call Linear again. With
+`connections=["linear"]`, the agent can call Linear for this message. Slack
+stays unavailable, even though it is connected to the agent. The connection
+names are the ones on the **Integrations** page of the platform.
+
+## Recipe 4: no tools at all
+
+**Goal:** "Rewrite this text. Do not search or call anything."
+
+For a pure transformation, turn off every tool for the message. It makes the
+answer faster and more predictable.
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import (
+        IndexedDocumentsScope,
+        McpScope,
+        MessageScope,
+        WebScope,
+    )
+
+    run = await client.chat.start(
+        agent_id=AGENT_ID,
+        message="Rewrite for a non-technical reader: the p99 latency spiked to 1.4s.",
+        message_scope=MessageScope(
+            web=WebScope(enabled=False),
+            indexed_documents=IndexedDocumentsScope(enabled=False),
+            mcp=McpScope(enabled=False),
+        ),
+    )
+    print(await run.text())
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {
+          "content": "Rewrite for a non-technical reader: the p99 latency spiked to 1.4s.",
+          "scope": {
+            "web": {"enabled": false},
+            "indexed_documents": {"enabled": false},
+            "mcp": {"enabled": false}
+          }
+        },
+        "options": {
+          "agent_id": "'"$AGENT_ID"'",
+          "user_id": "'"$COMINTY_USER_ID"'"
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+▶ [`examples/07_custom_agent.py`](https://github.com/cominty/python-sdk/blob/main/examples/07_custom_agent.py)
+
+**Expected behavior:** The agent has no web, no document search, and no MCP
+tool for this message. It cannot look anything up, so it rewrites the sentence
+you gave it and nothing else. The next message without a scope gets its
+capabilities back.
+
+## Recipe 5: a thread that never uses the web
+
+**Goal:** "Support conversations must never browse the web."
+
+This time the rule is for the whole thread. Use `thread_capabilities` with
+`activation="never"`.
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import (
+        AgentCapabilities,
+        APIError,
+        MessageScope,
+        WebCapability,
+        WebScope,
+    )
+
+    run = await client.chat.start(
+        agent_id=AGENT_ID,
+        message="What is the refund window for annual plans?",
+        thread_capabilities=AgentCapabilities(
+            web=WebCapability(activation="never"),
+        ),
+    )
+    print(await run.text())
+
+    # A later message cannot bring the web back.
+    try:
+        await client.chat.send(
+            run.thread.id,
+            agent_id=AGENT_ID,
+            message="Check a competitor's pricing online.",
+            message_scope=MessageScope(web=WebScope(enabled=True)),
+        )
+    except APIError as exc:
+        print(exc.status_code, exc.detail)  # 422
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {"content": "What is the refund window for annual plans?"},
+        "options": {
+          "agent_id": "'"$AGENT_ID"'",
+          "user_id": "'"$COMINTY_USER_ID"'",
+          "capabilities": {"web": {"activation": "never"}}
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+▶ [`examples/11_capabilities.py`](https://github.com/cominty/python-sdk/blob/main/examples/11_capabilities.py)
+
+**Expected behavior:** The agent answers from your documents and its own
+knowledge. It has no web search tool on any message of the thread. Asking for
+web search on a later message does not work: the request is rejected with a 422
+`APIError` before the agent runs, because the thread does not have the
+capability to turn on. The other capabilities (documents, MCP, and so on) keep
+the agent's values, because you only redefined `web`.
+
+## Recipe 6: generate an image only when asked
+
+**Goal:** "Let the agent draw, but only when the user asks for it."
+
+Use `on_request`. The capability is installed but off until a message turns it
+on.
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import (
+        AgentCapabilities,
+        ImageGenerationCapability,
+        ImageGenerationScope,
+        MessageScope,
+    )
+
+    run = await client.chat.start(
+        agent_id=AGENT_ID,
+        message="Describe a simple onboarding flow in three steps.",
+        thread_capabilities=AgentCapabilities(
+            image_generation=ImageGenerationCapability(activation="on_request"),
+        ),
+    )
+    print(await run.text())
+
+    drawing = await client.chat.send(
+        run.thread.id,
+        agent_id=AGENT_ID,
+        message="Draw that flow as a diagram.",
+        message_scope=MessageScope(
+            image_generation=ImageGenerationScope(enabled=True),
+        ),
+    )
+    print(await drawing.text())
+
+    # Next message, no scope: image generation is off again.
+    text_only = await client.chat.send(
+        run.thread.id,
+        agent_id=AGENT_ID,
+        message="Now add a fourth step, in words.",
+    )
+    print(await text_only.text())
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat/$THREAD_ID" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {
+          "content": "Draw that flow as a diagram.",
+          "scope": {"image_generation": {"enabled": true}}
+        },
+        "options": {"agent_id": "'"$AGENT_ID"'"}
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+▶ [`examples/11_capabilities.py`](https://github.com/cominty/python-sdk/blob/main/examples/11_capabilities.py)
+
+**Expected behavior:** On the first message, the agent has no image tool. It
+describes the flow in words. On the second message, the scope turns image
+generation on, so the agent can produce the diagram. On the third message you
+sent no scope, so image generation is off again and the agent answers in words.
+Sending `ImageGenerationScope(enabled=False)` on an `on_request` capability is
+an error, because the capability is already off.
+
+## Recipe 7: restrict a thread to a few sources, connections, and skills
+
+**Goal:** "This support thread may only read two sources, call Linear, and use
+one skill."
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import (
+        AgentCapabilities,
+        IndexedDocumentsCapability,
+        McpCapability,
+        SkillsCapability,
+    )
+
+    run = await client.chat.start(
+        agent_id=AGENT_ID,
+        message="A customer cannot log in after a password reset. What do we do?",
+        thread_capabilities=AgentCapabilities(
+            indexed_documents=IndexedDocumentsCapability(
+                activation="always",
+                source_ids=[SOURCE_ID, OTHER_SOURCE_ID],
+            ),
+            mcp=McpCapability(activation="always", connections=["linear"]),
+            skills=SkillsCapability(activation="always", include=[SKILL_ID]),
+        ),
+    )
+    print(await run.text())
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {"content": "A customer cannot log in after a password reset. What do we do?"},
+        "options": {
+          "agent_id": "'"$AGENT_ID"'",
+          "user_id": "'"$COMINTY_USER_ID"'",
+          "capabilities": {
+            "indexed_documents": {"activation": "always", "source_ids": [2292, 2293]},
+            "mcp": {"activation": "always", "connections": ["linear"]},
+            "skills": {"activation": "always", "include": ["your-skill-id"]}
+          }
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+▶ [`examples/11_capabilities.py`](https://github.com/cominty/python-sdk/blob/main/examples/11_capabilities.py)
+
+**Expected behavior:** The agent searches only the two sources you listed, and
+no other. It can call Linear but no other connection. It can load only the one
+skill. Web search, image generation, and the other capabilities keep what the
+agent has, because you did not pass them. The three lists apply to every message
+of the thread.
+
+### What `ALL` and invalid values do
+
+A filter you leave out means no restriction. `ALL` says it explicitly.
+
+```python
+from cominty_sdk import ALL, McpCapability
+
+McpCapability(activation="always")                  # every connection
+McpCapability(activation="always", connections=ALL)  # same thing
+```
+
+Three values look like "no filter" but are errors. The SDK raises
+`InvalidParams` before it sends anything:
+
+```python
+from cominty_sdk import InvalidParams, McpCapability
+
+for bad in (None, [], ["*"]):
+    try:
+        McpCapability(activation="always", connections=bad)
+    except InvalidParams as exc:
+        print(exc)
+```
+
+| Value | Why it is refused | What to pass instead |
+| ----- | ----------------- | -------------------- |
+| `None` | Ambiguous | `ALL` for no restriction |
+| `[]` | An empty list is ambiguous | `ALL`, or turn the capability off |
+| `["*"]` | `"*"` inside a list is not a wildcard | `ALL` on its own |
+
+A filter together with `activation="never"` or `enabled=False` is also refused,
+because those states take no filter.
+
+<Warning>
+  A capability you pass replaces the agent's version of it entirely. If the
+  agent limits documents to two sources and you pass
+  `IndexedDocumentsCapability(activation="always", document_ids=[...])`, the
+  agent's `source_ids` are gone. Capabilities you do not pass keep the agent's
+  value: web stays on until you pass `WebCapability(activation="never")`. See
+  [Override an agent for one thread](/guides/capabilities#override-an-agent-for-one-thread).
+</Warning>
+
+## Recipe 8: one memory per customer
+
+**Goal:** "Remember each customer's preferences, and never mix customers up."
+
+Memory is a capability. Give each thread a namespace that includes the customer
+id.
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import AgentCapabilities, MemoryCapability
+
+    customer_id = "acme"
+
+    run = await client.chat.start(
+        agent_id=AGENT_ID,
+        message="Remember that this customer prefers short answers.",
+        thread_capabilities=AgentCapabilities(
+            memory=MemoryCapability(
+                activation="always",
+                namespace=f"customer-{customer_id}",
+            ),
+        ),
+    )
+    print(await run.text())
+
+    # The namespace is frozen for the thread: no need to repeat it.
+    follow_up = await client.chat.send(
+        run.thread.id,
+        agent_id=AGENT_ID,
+        message="What do you remember about this customer?",
+    )
+    print(await follow_up.text())
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {"content": "Remember that this customer prefers short answers."},
+        "options": {
+          "agent_id": "'"$AGENT_ID"'",
+          "user_id": "'"$COMINTY_USER_ID"'",
+          "capabilities": {
+            "memory": {"activation": "always", "namespace": "customer-acme"}
+          }
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+To run a thread with no memory at all, even if the agent has a namespace:
+
+```python
+thread_capabilities=AgentCapabilities(
+    memory=MemoryCapability(activation="never"),
+)
+```
+
+▶ [`examples/11_capabilities.py`](https://github.com/cominty/python-sdk/blob/main/examples/11_capabilities.py) ·
+[`examples/09_memory.py`](https://github.com/cominty/python-sdk/blob/main/examples/09_memory.py)
+
+**Expected behavior:** The agent has memory tools on this thread. It writes the
+preference to a file in the `customer-acme` namespace, and reads it back on the
+next message. A thread started for another customer uses a different namespace,
+so it cannot see this file. With `activation="never"`, the agent has no memory
+tools and writes nothing, even if the agent normally has a namespace. A
+follow-up cannot change the namespace: start a new thread to use another one.
+
+Read what the agent stored with [`client.memory`](/guides/memory-namespaces).
+
+## Recipe 9: lock the thread, then focus each message
+
+**Goal:** "A support thread with a fixed policy, where each question can narrow
+it further."
+
+Combine both levels. The thread sets the policy once. Each message narrows it
+without ever going beyond it.
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import (
+        AgentCapabilities,
+        APIError,
+        IndexedDocumentsCapability,
+        IndexedDocumentsScope,
+        McpCapability,
+        McpScope,
+        MessageScope,
+        WebCapability,
+    )
+
+    run = await client.chat.start(
+        agent_id=AGENT_ID,
+        message="Which plans include single sign-on?",
+        thread_capabilities=AgentCapabilities(
+            web=WebCapability(activation="never"),
+            indexed_documents=IndexedDocumentsCapability(
+                activation="always",
+                source_ids=[SOURCE_ID, OTHER_SOURCE_ID],
+            ),
+            mcp=McpCapability(activation="on_request", connections=["linear"]),
+        ),
+    )
+    print(await run.text())
+
+    # Narrow to one source for this message.
+    narrowed = await client.chat.send(
+        run.thread.id,
+        agent_id=AGENT_ID,
+        message="Answer from the first source only.",
+        message_scope=MessageScope(
+            indexed_documents=IndexedDocumentsScope(
+                enabled=True,
+                source_ids=[SOURCE_ID],
+            ),
+        ),
+    )
+    print(await narrowed.text())
+
+    # Turn the on_request connection on for one message.
+    with_linear = await client.chat.send(
+        run.thread.id,
+        agent_id=AGENT_ID,
+        message="Is there an open ticket about SSO?",
+        message_scope=MessageScope(mcp=McpScope(enabled=True)),
+    )
+    print(await with_linear.text())
+
+    # Going beyond the thread is refused.
+    try:
+        await client.chat.send(
+            run.thread.id,
+            agent_id=AGENT_ID,
+            message="Search every source.",
+            message_scope=MessageScope(
+                indexed_documents=IndexedDocumentsScope(
+                    enabled=True,
+                    source_ids=[SOURCE_ID, 999999],
+                ),
+            ),
+        )
+    except APIError as exc:
+        print(exc.status_code, exc.detail)  # 422
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat/$THREAD_ID" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {
+          "content": "Answer from the first source only.",
+          "scope": {"indexed_documents": {"enabled": true, "source_ids": [2292]}}
+        },
+        "options": {"agent_id": "'"$AGENT_ID"'"}
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+▶ [`examples/11_capabilities.py`](https://github.com/cominty/python-sdk/blob/main/examples/11_capabilities.py)
+
+**Expected behavior:**
+
+| Message | Web | Documents | Linear |
+| ------- | --- | --------- | ------ |
+| 1. No scope | Off, for the whole thread | Both sources | Off (`on_request`) |
+| 2. `source_ids=[SOURCE_ID]` | Off | The first source only | Off |
+| 3. `McpScope(enabled=True)` | Off | Both sources | On, for this message |
+| 4. A source outside the thread | The request fails with a 422 | | |
+
+{/* ILLUSTRATION: capabilities-narrowing-422 */}
+
+Each scope applies to its message only. After message 2, message 3 searches
+both sources again. The thread policy is the ceiling. A message can go down
+from it, never above it.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Capabilities" icon="book-open" href="/guides/capabilities">
+    The definitions, activation modes, and filters.
+  </Card>
+  <Card title="Troubleshooting and migration" icon="wrench" href="/guides/capabilities-troubleshooting">
+    Move from `disabled_tools`, and understand each error.
+  </Card>
+</CardGroup>

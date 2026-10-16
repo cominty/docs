@@ -3,21 +3,22 @@ title: "MCP integrations"
 description: "Connect agents to the tools your team uses through MCP servers"
 ---
 
-Cominty agents reach external tools (GitHub, Slack, HubSpot, and more) through
+Cominty agents reach external tools (BigQuery, Slack, HubSpot, and more) through
 [MCP](https://modelcontextprotocol.io) servers. Cominty hosts them behind a
 single **MCP hub** at `https://mcp.cominty.com`.
 
 Once an integration is connected to an agent, its tools are available to that
-agent. You do not change any code. You can turn them off per request with
-[`disabled_tools`](/sdk/reference#disabled-tools) (for example `"mcp:slack"` or
-`"mcp:*"`).
+agent. You do not change any code. You can turn them off for one message with a
+`McpScope`, keep only some connections, or fix the list for a whole thread with
+`McpCapability(connections=...)`. See [Capabilities](/guides/capabilities) and
+the [use case on connections](/guides/capabilities-use-cases#recipe-3-keep-some-connections-or-none).
 
 ## Connect an integration
 
 <Steps>
   <Step title="Pick the integration">
     Choose it on [platform.cominty.ai](https://platform.cominty.ai). See the
-    [integration guides](/mcp/integrations/github) for provider-specific steps.
+    [integration guides](/mcp/integrations/bigquery) for provider-specific steps.
   </Step>
   <Step title="Register an OAuth app, if the provider requires it">
     Some providers ask you to register your own app first. Use the callback URL
@@ -26,6 +27,10 @@ agent. You do not change any code. You can turn them off per request with
   <Step title="Authorize">
     Sign in with the provider and approve the access. Cominty stores the token
     and the agent can call the tools.
+  </Step>
+  <Step title="Tell the agent how to use it">
+    In **Agent configuration**, say when to use the connector and how. See
+    [Connector instructions](/mcp/connector-instructions).
   </Step>
 </Steps>
 
@@ -37,7 +42,7 @@ agent. You do not change any code. You can turn them off per request with
 ## Integrations
 
 <CardGroup cols={2}>
-  <Card title="GitHub" icon="github" href="/mcp/integrations/github">
-    Register a GitHub OAuth app and connect it.
+  <Card title="Google BigQuery" icon="database" href="/mcp/integrations/bigquery">
+    Create a Google OAuth client and connect BigQuery.
   </Card>
 </CardGroup>

@@ -146,31 +146,38 @@ key a file by `(namespace, path)`. There is no pagination or sort option.
 ## Attach a thread to a namespace
 
 A thread only uses memory if it is attached to a namespace when it starts.
-Pass `memory_namespace` on the start request. The value is frozen for the whole
+Memory is a [capability](/guides/capabilities): pass a `memory` entry in the
+thread's capabilities on the start request. The value is frozen for the whole
 life of the thread. Follow-up messages do not accept it.
 
 ```mermaid
 flowchart TD
-  start["Start a thread"] --> sent{"memory_namespace passed?"}
-  sent -->|"yes"| bound["Thread uses that namespace"]
+  start["Start a thread"] --> sent{"memory capability passed?"}
+  sent -->|"always + namespace"| bound["Thread uses that namespace"]
+  sent -->|"never"| off["No memory tools"]
   sent -->|"no"| agentNs{"Agent has a namespace on the platform?"}
   agentNs -->|"yes"| bound
-  agentNs -->|"no"| off["No memory tools"]
+  agentNs -->|"no"| off
   bound --> send["Follow-up messages"]
   off --> send
-  send --> same["Same namespace as at start"]
+  send --> same["Same memory as at start"]
 ```
 
 <Tabs>
   <Tab title="Python SDK">
     ```python
+    from cominty_sdk import AgentCapabilities, MemoryCapability
+
     run = await client.chat.start(
         agent_id="agt_1",
         message="Use the tone file.",
-        memory_namespace="support-bot",
+        thread_capabilities=AgentCapabilities(
+            memory=MemoryCapability(activation="always", namespace="support-bot"),
+        ),
     )
+    print(await run.text())  # read the reply before sending the next message
 
-    # Same thread, same namespace. Do not pass memory_namespace.
+    # Same thread, same namespace. Do not pass thread_capabilities.
     await client.chat.send(run.thread.id, agent_id="agt_1", message="Again, shorter.")
     ```
   </Tab>
@@ -184,7 +191,9 @@ flowchart TD
         "options": {
           "agent_id": "agt_1",
           "user_id": "'"$COMINTY_USER_ID"'",
-          "memory_namespace": "support-bot"
+          "capabilities": {
+            "memory": {"activation": "always", "namespace": "support-bot"}
+          }
         }
       }'
     ```
@@ -195,11 +204,19 @@ Keep in mind:
 
 - To switch namespaces, start a new thread.
 - Thread responses do not echo the namespace. Keep the name you sent.
-- If you omit `memory_namespace` and the agent has no namespace configured on
+- `namespace` is required with `activation="always"`, and it is 1 to 128
+  characters.
+- If you send no `memory` entry and the agent has no namespace configured on
   the platform, the thread runs normally with no memory tools. Nothing tells
   you that memory is off. Pass it on every start where you expect memory.
-- You cannot force "no memory" on an agent that already has a namespace. A
-  value you send at start always wins over the agent's.
+- To run a thread with no memory, even if the agent has a namespace, pass
+  `MemoryCapability(activation="never")`. In HTTP, send
+  `"memory": {"activation": "never"}`.
+- Other capabilities you pass in the same call do not remove the agent's
+  namespace. Only the `memory` entry changes memory.
+- A namespace you send at start wins over the agent's.
+- `options.memory_namespace` still works on the HTTP API, but it is deprecated.
+  It cannot be sent together with `options.capabilities`.
 
 ## Isolate your users
 
@@ -242,7 +259,7 @@ in a namespace named `{user_id}::default`, one per former user. Pass that exact
 string as `namespace` to read them, or copy them to a namespace you choose.
 
 Threads that were already running keep reading that namespace. A new thread has
-no memory until you pass `memory_namespace`.
+no memory until you pass a `memory` capability.
 
 ## Next steps
 

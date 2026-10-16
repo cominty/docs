@@ -62,6 +62,11 @@ It is idempotent and safe to run repeatedly. It does the following:
    and schema-field descriptions when they are blank. Existing public text is
    left alone, except descriptions that still mention internal markers.
 
+6. Flag legacy fields as deprecated
+   memory_namespace, source_ids, document_ids and disabled_tools are still
+   accepted but replaced by capabilities and message.scope. We set
+   `deprecated: true` on them (see DEPRECATED_FIELDS).
+
 If the generator starts emitting other Mintlify-incompatible constructs, add
 the fix here so it stays in one place.
 """
@@ -206,23 +211,27 @@ OPERATION_COPY = {
         "description": (
             "Start a conversation and post the first message. The response is "
             "the full thread. Send options.agent_id and options.user_id. "
-            "options.memory_namespace binds the thread to a memory namespace "
-            "for its whole life. Omit it and the thread uses the namespace "
-            "already set on the agent, if any. Otherwise the thread runs "
-            "without long-term memory tools. options.max_steps caps the tool "
-            "rounds of the first assistant message. Omit it and the server "
-            "applies its default, currently 60."
+            "options.capabilities overrides some of the agent's capabilities "
+            "for the whole life of the thread, memory included. Each "
+            "capability you send replaces the agent's value entirely, and the "
+            "others keep the agent's value. message.scope turns a capability "
+            "on or off, or narrows its allowlist, for this first message only. "
+            "Omit options.capabilities and the thread follows the agent. "
+            "options.max_steps caps the tool rounds of the first assistant "
+            "message. Omit it and the server applies its default, currently 60."
         ),
     },
     ("post", "/chat/{thread_id}"): {
         "summary": "Send a follow-up message",
         "description": (
             "Post a message in an existing thread. The response is the new "
-            "message, not the thread. This call does not accept "
-            "memory_namespace. The namespace chosen when the thread started "
-            "stays in effect. options.max_steps caps the tool rounds of this "
-            "message only. Omit it and the server default applies again, not "
-            "the value of the previous message."
+            "message, not the thread. message.scope narrows the thread's "
+            "capabilities for this message only: it can turn one off, or "
+            "shrink an allowlist, but never widen them. options.capabilities "
+            "is rejected with 422: the thread's capabilities, memory included, "
+            "were frozen when it started. options.max_steps caps the tool "
+            "rounds of this message only. Omit it and the server default "
+            "applies again, not the value of the previous message."
         ),
     },
     ("get", "/chat/messages/{message_id}/stream"): {
@@ -236,14 +245,18 @@ OPERATION_COPY = {
         "summary": "Cancel a message",
         "description": (
             "Cancel an in-flight assistant message. The response is the "
-            "message with status cancelled."
+            "message with status cancelled. A message that is not running "
+            "(finished, failed, already cancelled, or a user message) returns "
+            "400 Message is not live, so a second cancel always fails."
         ),
     },
     ("get", "/chat/messages/{message_id}/export"): {
         "summary": "Export a message",
         "description": (
             "Export a message as a PDF or DOCX. The response body is the file "
-            "bytes, not JSON. format is pdf or docx."
+            "bytes, not JSON, and carries no file name. format is pdf or docx. "
+            "A message with no content, for example one still running, "
+            "returns 400 Message has no content."
         ),
     },
     ("get", "/chat/files/upload"): {
@@ -479,9 +492,36 @@ FIELD_COPY = {
         "not select the memory namespace."
     ),
     ("StartChatOptions", "memory_namespace"): (
-        "Namespace the thread may read and update. At most 128 characters. "
-        "Omit it to use the agent's namespace, or to run without memory tools "
-        "when the agent has none. The follow-up message call cannot change it."
+        "Deprecated. Use capabilities.memory instead. Cannot be sent together "
+        "with capabilities (422). At most 128 characters."
+    ),
+    ("StartChatOptions", "capabilities"): (
+        "Overrides some of the agent's capabilities for the whole life of the "
+        "thread. Each capability you send replaces the agent's value "
+        "entirely, so an omitted filter goes back to \"*\". Capabilities you "
+        "do not send keep the agent's value. Memory is a capability: send "
+        "memory with activation always and a namespace, or never to run "
+        "without memory. The result is frozen on the thread."
+    ),
+    ("ChatOptions", "capabilities"): (
+        "Not accepted on a follow-up: the request returns 422. The thread's "
+        "capabilities were frozen when it started. Use message.scope to "
+        "narrow one message, or start a new thread."
+    ),
+    ("HumanMessage", "scope"): (
+        "Turns a capability on or off, or narrows its allowlist, for this "
+        "message only. It can never widen what the thread allows. Cannot be "
+        "sent together with source_ids, document_ids or disabled_tools (422)."
+    ),
+    ("HumanMessage", "source_ids"): (
+        "Deprecated. Use scope.indexed_documents.source_ids instead."
+    ),
+    ("HumanMessage", "document_ids"): (
+        "Deprecated. Use scope.indexed_documents.document_ids instead."
+    ),
+    ("HumanMessage", "disabled_tools"): (
+        "Deprecated. Use scope instead, for example scope.web.enabled set to "
+        "false."
     ),
     ("StartChatOptions", "max_steps"): (
         "Maximum tool rounds the agent may run for this message. Integer, at "
@@ -514,7 +554,83 @@ FIELD_COPY = {
         "api sessions are what an API token can list. portal is not used "
         "with an API token."
     ),
+    ("SingleAgentCapability", "activation"): (
+        "always: on for every message. on_request: off until a message "
+        "turns it on with scope. never: unavailable."
+    ),
+    ("InstalledIndexedDocumentsAgentCapability", "activation"): (
+        "always or on_request. Use never on its own to turn the capability off."
+    ),
+    ("InstalledIndexedDocumentsAgentCapability", "source_ids"): (
+        "Allowlist of document source ids, or \"*\" for every source the user "
+        "can read. At least one id when it is a list."
+    ),
+    ("InstalledIndexedDocumentsAgentCapability", "document_ids"): (
+        "Allowlist of document ids, or \"*\" for no restriction. At least one "
+        "id when it is a list."
+    ),
+    ("InstalledMCPAgentCapability", "activation"): (
+        "always or on_request. Use never on its own to turn the capability off."
+    ),
+    ("InstalledMCPAgentCapability", "connections"): (
+        "Allowlist of MCP connection names, or \"*\" for every connection of "
+        "the user. At least one name when it is a list."
+    ),
+    ("InstalledSkillsAgentCapability", "include"): (
+        "Allowlist of skill ids, or \"*\" for every active skill the user can "
+        "read. At least one id when it is a list."
+    ),
+    ("AlwaysMemoryAgentCapability", "namespace"): (
+        "Memory namespace the thread reads and writes. 1 to 128 characters."
+    ),
+    ("SingleMessageScope", "enabled"): (
+        "true turns an on_request capability on for this message. false turns "
+        "an always capability off for this message."
+    ),
+    ("IndexedDocumentsMessageScope", "enabled"): (
+        "true turns document search on for this message, false turns it off. "
+        "A filter is only accepted when enabled is true."
+    ),
+    ("IndexedDocumentsMessageScope", "source_ids"): (
+        "Narrows the thread's source allowlist for this message. Must be a "
+        "subset of it. \"*\" keeps the thread allowlist."
+    ),
+    ("IndexedDocumentsMessageScope", "document_ids"): (
+        "Focuses this message on these documents. \"*\" means no document "
+        "filter."
+    ),
+    ("MCPMessageScope", "enabled"): (
+        "true turns MCP on for this message, false turns every connection off."
+    ),
+    ("MCPMessageScope", "connections"): (
+        "Narrows the thread's connections for this message. Must be a subset "
+        "of them. \"*\" keeps the thread allowlist."
+    ),
 }
+
+# Legacy request fields, replaced by capabilities and message.scope. They are
+# still accepted, so we flag them instead of removing them.
+DEPRECATED_FIELDS = (
+    ("StartChatOptions", "memory_namespace"),
+    ("HumanMessage", "source_ids"),
+    ("HumanMessage", "document_ids"),
+    ("HumanMessage", "disabled_tools"),
+)
+
+
+def mark_deprecated(spec):
+    """Flag the legacy request fields as deprecated. Returns a count."""
+    schemas = (spec.get("components") or {}).get("schemas") or {}
+    marked = 0
+    for schema_name, field_name in DEPRECATED_FIELDS:
+        prop = ((schemas.get(schema_name) or {}).get("properties") or {}).get(
+            field_name
+        )
+        if prop is None or prop.get("deprecated") is True:
+            continue
+        prop["deprecated"] = True
+        marked += 1
+    return marked
 
 
 def _has_token_param(op):
@@ -650,6 +766,7 @@ def main():
 
     removed, public = apply_security(spec)
     filled, unknown = enrich_copy(spec)
+    deprecated = mark_deprecated(spec)
 
     SPEC.write_text(json.dumps(spec, indent=2) + "\n")
 
@@ -665,6 +782,7 @@ def main():
     print(f"  duplicate header rm  : {removed}")
     print(f"  ops without token    : {dropped_ops or '(none)'}")
     print(f"  descriptions filled  : {filled}")
+    print(f"  fields deprecated    : {deprecated}")
     print(f"  ops missing copy     : {unknown or '(none)'}")
     return 0
 

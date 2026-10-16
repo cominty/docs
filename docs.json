@@ -33,6 +33,14 @@
             ]
           },
           {
+            "group": "Capabilities",
+            "pages": [
+              "guides/capabilities",
+              "guides/capabilities-use-cases",
+              "guides/capabilities-troubleshooting"
+            ]
+          },
+          {
             "group": "Concepts",
             "pages": [
               "guides/memory-namespaces",
@@ -49,13 +57,14 @@
             "group": "Overview",
             "pages": [
               "mcp/overview",
+              "mcp/connector-instructions",
               "mcp/oauth-callback"
             ]
           },
           {
             "group": "Integrations",
             "pages": [
-              "mcp/integrations/github"
+              "mcp/integrations/bigquery"
             ]
           }
         ]
