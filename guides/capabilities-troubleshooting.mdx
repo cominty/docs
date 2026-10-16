@@ -6,8 +6,6 @@ description: "Move from disabled_tools and memory_namespace to capabilities, and
 This page covers two things: how to move your code to capabilities (SDK 1.0.0),
 and what each error means when a call fails.
 
-{/* ILLUSTRATION: capabilities-migration-before-after */}
-
 ## Migrate from SDK 0.5.0
 
 SDK 1.0.0 removes four arguments of `chat.start` and `chat.send`. Their job is
@@ -114,8 +112,6 @@ There are two kinds of errors, and they happen at different times.
 | Request sent | No | Yes, and rejected |
 | Cause | The value is invalid on its own | The value is valid, but not allowed on this thread |
 | Fix | Change the value in your code | Change the request, or start a new thread |
-
-{/* ILLUSTRATION: capabilities-error-map */}
 
 ### Local `InvalidParams`
 

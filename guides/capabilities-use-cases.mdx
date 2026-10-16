@@ -9,8 +9,6 @@ complete (a thread policy plus per-message changes).
 
 If you want the definitions first, read [Capabilities](/guides/capabilities).
 
-{/* ILLUSTRATION: capabilities-hero */}
-
 ## Before you start
 
 Every snippet runs inside an `AsyncCominty` context and uses these
@@ -752,8 +750,6 @@ without ever going beyond it.
 | 2. `source_ids=[SOURCE_ID]` | Off | The first source only | Off |
 | 3. `McpScope(enabled=True)` | Off | Both sources | On, for this message |
 | 4. A source outside the thread | The request fails with a 422 | | |
-
-{/* ILLUSTRATION: capabilities-narrowing-422 */}
 
 Each scope applies to its message only. After message 2, message 3 searches
 both sources again. The thread policy is the ceiling. A message can go down

@@ -20,8 +20,6 @@ This guide explains the model. To see it in action, start with the
 [Python SDK](/sdk/reference#capabilities) and the
 [HTTP API](/api-reference#capabilities).
 
-{/* ILLUSTRATION: capabilities-hero */}
-
 ## The capabilities
 
 | Capability | What the agent can do | Activation | Filter |
@@ -56,8 +54,6 @@ flowchart TD
 | Thread | `thread_capabilities` on `chat.start` | The whole thread | Override the agent, capability by capability |
 | Message | `message_scope` on `chat.start` and `chat.send` | One message | Turn off, turn on, or narrow. Never widen |
 
-{/* ILLUSTRATION: capabilities-three-layers */}
-
 <Note>
   An agent with no capabilities saved behaves as if every capability were
   `always`, with no filter. Setting capabilities on the **Agents** page is how
@@ -74,7 +70,18 @@ Every capability you send has an `activation`. It says when the capability runs.
 | `on_request` | Installed but off. A message turns it on, for that message only. |
 | `never` | Not installed. The agent cannot use it, and no message can change that. |
 
-{/* ILLUSTRATION: capabilities-activation-modes */}
+<Frame>
+  <img
+    className="block dark:hidden"
+    src="/images/capabilities/capabilities-activation-modes-light.png"
+    alt="A grid with three rows (always, on_request, never) and four messages. Web search is on, off, on, on for always. It is off, on, off, off for on_request. It is always off for never, and a scope that tries to turn it on is refused with a 422."
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/capabilities/capabilities-activation-modes-dark.png"
+    alt="A grid with three rows (always, on_request, never) and four messages. Web search is on, off, on, on for always. It is off, on, off, off for on_request. It is always off for never, and a scope that tries to turn it on is refused with a 422."
+  />
+</Frame>
 
 With `on_request`, the capability lasts one message. Send the scope again on
 every message that needs it.
@@ -221,7 +228,18 @@ Filters take ids and names that you copy from the platform.
 | `connections` | The name of the integration on the **Integrations** page, for example `linear`. |
 | `include` (skills) | The skill id on the **Skills** page. |
 
-{/* ILLUSTRATION: capabilities-find-source-id */}
+<Frame caption="The Documents page of the platform. Copy the ID shown under a source name.">
+  <img
+    className="block dark:hidden"
+    src="/images/capabilities/capabilities-find-source-id-light.png"
+    alt="The Documents page of the Cominty platform. Each source shows an ID under its name, such as ID 2292, with a copy button. That number is the value to use in source_ids."
+  />
+  <img
+    className="hidden dark:block"
+    src="/images/capabilities/capabilities-find-source-id-dark.png"
+    alt="The Documents page of the Cominty platform. Each source shows an ID under its name, such as ID 2292, with a copy button. That number is the value to use in source_ids."
+  />
+</Frame>
 
 <Warning>
   The API does not check ids. An id that is mistyped or that you cannot read
@@ -282,8 +300,6 @@ To switch web search off, say so. Leaving `web` out never turns it off:
 thread_capabilities=AgentCapabilities(web=WebCapability(activation="never"))
 ```
 
-{/* ILLUSTRATION: capabilities-override-one-capability */}
-
 <Warning>
   `thread_capabilities` can turn on a capability that the agent sets to
   `never`. Do not rely on `never` on the agent to keep a capability away from
@@ -309,8 +325,6 @@ thread_capabilities=AgentCapabilities(
 - Without a `memory` entry, the thread uses the agent's namespace. If the agent
   has none, the thread runs without memory.
 - The namespace is frozen for the thread. A follow-up cannot change it.
-
-{/* ILLUSTRATION: capabilities-memory-frozen */}
 
 See [Memory namespaces](/guides/memory-namespaces) for the files themselves.
 
