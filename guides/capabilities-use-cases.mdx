@@ -33,18 +33,47 @@ async def main():
 asyncio.run(main())
 ```
 
-The agent in these examples has web search, document search, and one MCP
-integration (Linear) available. Where a recipe says "the agent can", it means
-the agent can use it if the question calls for it. A capability that is on does
-not force the agent to use it.
-
 <Tip>
   Not sure where to find an id? See [Find your ids](/guides/capabilities#find-your-ids).
 </Tip>
 
+## The example agent
+
+Every recipe starts from the same agent: `agent.chat`, the built-in Chat agent.
+It has no capabilities saved, so every capability is `always`, with no filter.
+The recipes work the same with Hive. They do not apply to Planner, which
+ignores capabilities. See [Built-in agents](/guides/agents).
+
+| Capability | Activation | Filter | What it means |
+| ---------- | ---------- | ------ | ------------- |
+| `web` | `always` | - | The agent may search the web on any message |
+| `indexed_documents` | `always` | `ALL` | Every source and every document |
+| `mcp` | `always` | `ALL` | Every integration available to the user. The recipes assume Linear and Slack. |
+| `skills` | `always` | `ALL` | Every skill available to the user |
+| `image_generation`, `video_generation`, `music_generation` | `always` | - | The agent may generate media on any message |
+| `memory` | - | - | Off: the built-in agent has no namespace |
+
+Each recipe opens with its **Starting point**: what the agent has before the
+call, and what the recipe changes.
+
+Where a recipe says "the agent can", it means the agent can use it if the
+question calls for it. A capability that is on does not force the agent to use
+it. That is why the messages name what they want ("in my documents", "without
+searching the web"): the scope enforces, the words guide the agent. See
+[Help the agent follow a scope](/guides/capabilities#help-the-agent-follow-a-scope).
+
+<Note>
+  If you use your own agent, check its capabilities on the **Agents** page
+  first. A scope on a capability your agent sets to `never` returns a 422. So
+  does `enabled=False` on a capability it sets to `on_request`.
+</Note>
+
 ## Recipe 1: skip the web for one message
 
 **Goal:** "Answer this question from what you know. Do not search the web."
+
+**Starting point:** the example agent. `web` is `always`, so the agent may
+search the web on any message. This recipe turns it off for one message.
 
 <Tabs>
   <Tab title="Python SDK">
@@ -53,7 +82,7 @@ not force the agent to use it.
 
     run = await client.chat.start(
         agent_id=AGENT_ID,
-        message="In two sentences, what is the MCP protocol?",
+        message="Without searching the web, what is the MCP protocol? Two sentences.",
         message_scope=MessageScope(web=WebScope(enabled=False)),
     )
     print(await run.text())
@@ -74,7 +103,7 @@ not force the agent to use it.
       -H "Content-Type: application/json" \
       -d '{
         "message": {
-          "content": "In two sentences, what is the MCP protocol?",
+          "content": "Without searching the web, what is the MCP protocol? Two sentences.",
           "scope": {"web": {"enabled": false}}
         },
         "options": {
@@ -88,15 +117,20 @@ not force the agent to use it.
 
 ▶ [`examples/11_capabilities.py`](https://github.com/cominty/python-sdk/blob/main/examples/11_capabilities.py)
 
-**Expected behavior:** The agent answers the first question without any web
-search tool call, even though its question is the kind it would normally look
-up. It still has every other capability: it could search your documents or call
-Linear if the question needed it. On the second message you sent no scope, so
-web search is back and the agent can check the spec online.
+**Expected behavior:** The agent answers the first question from what it
+already knows. Web search is off for this message, and the message says so. The
+agent still sees the web tool, but a call to it would be refused. It still has
+every other capability: it could search your documents or call Linear if the
+question needed it. On the second message you sent no scope, so web search is
+back, and the message asks for it ("online").
 
 ## Recipe 2: answer from one source, then one document
 
 **Goal:** "Summarize only the 2024 board deck."
+
+**Starting point:** the example agent. `indexed_documents` is `always`, with no
+filter, so every source is searchable. This recipe narrows one message to a
+source, then the next one to a document.
 
 Start by limiting the message to the source that holds your board decks. Copy
 the source **ID** from the [Documents page](https://platform.cominty.ai/knowledge).
@@ -108,7 +142,7 @@ the source **ID** from the [Documents page](https://platform.cominty.ai/knowledg
 
     run = await client.chat.start(
         agent_id=AGENT_ID,
-        message="Which board decks do you have access to? Give each document id.",
+        message="In my documents, which board decks can you find? Give each document id.",
         message_scope=MessageScope(
             indexed_documents=IndexedDocumentsScope(
                 enabled=True,
@@ -126,7 +160,7 @@ the source **ID** from the [Documents page](https://platform.cominty.ai/knowledg
       -H "Content-Type: application/json" \
       -d '{
         "message": {
-          "content": "Which board decks do you have access to? Give each document id.",
+          "content": "In my documents, which board decks can you find? Give each document id.",
           "scope": {"indexed_documents": {"enabled": true, "source_ids": [2292]}}
         },
         "options": {
@@ -194,7 +228,11 @@ the scope, searches every source again.
 
 **Goal:** "Answer without calling Linear." Or: "Use Linear, but not Slack."
 
-The agent has Linear and Slack connected. Turn MCP off for one message:
+**Starting point:** the example agent. `mcp` is `always`, with no filter, and
+Linear and Slack are connected. This recipe turns MCP off for one message, then
+keeps only Linear for another.
+
+Turn MCP off for one message:
 
 <Tabs>
   <Tab title="Python SDK">
@@ -203,7 +241,7 @@ The agent has Linear and Slack connected. Turn MCP off for one message:
 
     run = await client.chat.start(
         agent_id=AGENT_ID,
-        message="Give me a short status update for the team.",
+        message="Without calling Linear or Slack, draft a short status update template.",
         message_scope=MessageScope(mcp=McpScope(enabled=False)),
     )
     print(await run.text())
@@ -224,7 +262,7 @@ The agent has Linear and Slack connected. Turn MCP off for one message:
       -H "Content-Type: application/json" \
       -d '{
         "message": {
-          "content": "Give me a short status update for the team.",
+          "content": "Without calling Linear or Slack, draft a short status update template.",
           "scope": {"mcp": {"enabled": false}}
         },
         "options": {
@@ -243,7 +281,7 @@ To keep only some connections, list them:
     ```python
     run = await client.chat.start(
         agent_id=AGENT_ID,
-        message="List the tasks assigned to me this sprint.",
+        message="In Linear, list the tasks assigned to me this sprint.",
         message_scope=MessageScope(
             mcp=McpScope(enabled=True, connections=["linear"]),
         ),
@@ -258,7 +296,7 @@ To keep only some connections, list them:
       -H "Content-Type: application/json" \
       -d '{
         "message": {
-          "content": "List the tasks assigned to me this sprint.",
+          "content": "In Linear, list the tasks assigned to me this sprint.",
           "scope": {"mcp": {"enabled": true, "connections": ["linear"]}}
         },
         "options": {
@@ -272,9 +310,9 @@ To keep only some connections, list them:
 
 ▶ [`examples/08_mcp_linear.py`](https://github.com/cominty/python-sdk/blob/main/examples/08_mcp_linear.py)
 
-**Expected behavior:** With `enabled=False`, the agent has Linear connected but
-answers without calling it. It writes the status update from the conversation
-alone. On the next message, with no scope, it can call Linear again. With
+**Expected behavior:** With `enabled=False`, Linear and Slack stay connected,
+but they are off for this message. The agent drafts the template without calling
+them. On the next message, with no scope, it can call Linear again. With
 `connections=["linear"]`, the agent can call Linear for this message. Slack
 stays unavailable, even though it is connected to the agent. The connection
 names are the ones on the **Integrations** page of the platform.
@@ -282,6 +320,9 @@ names are the ones on the **Integrations** page of the platform.
 ## Recipe 4: no tools at all
 
 **Goal:** "Rewrite this text. Do not search or call anything."
+
+**Starting point:** the example agent. Web, documents, and MCP are all
+`always`. This recipe turns the three of them off for one message.
 
 For a pure transformation, turn off every tool for the message. It makes the
 answer faster and more predictable.
@@ -333,14 +374,17 @@ answer faster and more predictable.
 
 ▶ [`examples/07_custom_agent.py`](https://github.com/cominty/python-sdk/blob/main/examples/07_custom_agent.py)
 
-**Expected behavior:** The agent has no web, no document search, and no MCP
-tool for this message. It cannot look anything up, so it rewrites the sentence
+**Expected behavior:** Web, document search, and MCP are off for this message.
+The agent still sees their tools, but cannot run them. It rewrites the sentence
 you gave it and nothing else. The next message without a scope gets its
 capabilities back.
 
 ## Recipe 5: a thread that never uses the web
 
 **Goal:** "Support conversations must never browse the web."
+
+**Starting point:** the example agent. `web` is `always`. This recipe removes it
+from the thread.
 
 This time the rule is for the whole thread. Use `thread_capabilities` with
 `activation="never"`.
@@ -397,15 +441,20 @@ This time the rule is for the whole thread. Use `thread_capabilities` with
 ▶ [`examples/11_capabilities.py`](https://github.com/cominty/python-sdk/blob/main/examples/11_capabilities.py)
 
 **Expected behavior:** The agent answers from your documents and its own
-knowledge. It has no web search tool on any message of the thread. Asking for
-web search on a later message does not work: the request is rejected with a 422
-`APIError` before the agent runs, because the thread does not have the
-capability to turn on. The other capabilities (documents, MCP, and so on) keep
-the agent's values, because you only redefined `web`.
+knowledge. It has no web search tool on any message of the thread: with
+`never`, the tool is not installed, unlike a scope that only switches it off.
+Asking for web search on a later message does not work: the request is
+rejected with a 422 `APIError` before the agent runs, because the thread does
+not have the capability to turn on. The other capabilities (documents, MCP, and
+so on) keep the agent's values, because you only redefined `web`.
 
 ## Recipe 6: generate an image only when asked
 
 **Goal:** "Let the agent draw, but only when the user asks for it."
+
+**Starting point:** the example agent. `image_generation` is `always`, so the
+agent may draw on any message. This recipe sets it to `on_request` for the
+thread.
 
 Use `on_request`. The capability is installed but off until a message turns it
 on.
@@ -432,7 +481,7 @@ on.
     drawing = await client.chat.send(
         run.thread.id,
         agent_id=AGENT_ID,
-        message="Draw that flow as a diagram.",
+        message="Generate an image of that flow, drawn as a diagram.",
         message_scope=MessageScope(
             image_generation=ImageGenerationScope(enabled=True),
         ),
@@ -455,7 +504,7 @@ on.
       -H "Content-Type: application/json" \
       -d '{
         "message": {
-          "content": "Draw that flow as a diagram.",
+          "content": "Generate an image of that flow, drawn as a diagram.",
           "scope": {"image_generation": {"enabled": true}}
         },
         "options": {"agent_id": "'"$AGENT_ID"'"}
@@ -466,8 +515,8 @@ on.
 
 ▶ [`examples/11_capabilities.py`](https://github.com/cominty/python-sdk/blob/main/examples/11_capabilities.py)
 
-**Expected behavior:** On the first message, the agent has no image tool. It
-describes the flow in words. On the second message, the scope turns image
+**Expected behavior:** On the first message, image generation is off. The
+agent describes the flow in words. On the second message, the scope turns image
 generation on, so the agent can produce the diagram. On the third message you
 sent no scope, so image generation is off again and the agent answers in words.
 Sending `ImageGenerationScope(enabled=False)` on an `on_request` capability is
@@ -477,6 +526,9 @@ an error, because the capability is already off.
 
 **Goal:** "This support thread may only read two sources, call Linear, and use
 one skill."
+
+**Starting point:** the example agent. Every capability is `always`, with no
+filter. This recipe restricts three of them for the whole thread.
 
 <Tabs>
   <Tab title="Python SDK">
@@ -578,6 +630,9 @@ because those states take no filter.
 
 **Goal:** "Remember each customer's preferences, and never mix customers up."
 
+**Starting point:** the example agent. It has no memory namespace, so it has no
+memory. This recipe gives each thread one.
+
 Memory is a capability. Give each thread a namespace that includes the customer
 id.
 
@@ -653,6 +708,10 @@ Read what the agent stored with [`client.memory`](/guides/memory-namespaces).
 **Goal:** "A support thread with a fixed policy, where each question can narrow
 it further."
 
+**Starting point:** the example agent. Every capability is `always`, with no
+filter. The thread replaces web, documents, and MCP with its own policy. Each
+message then narrows that policy.
+
 Combine both levels. The thread sets the policy once. Each message narrows it
 without ever going beyond it.
 
@@ -688,7 +747,7 @@ without ever going beyond it.
     narrowed = await client.chat.send(
         run.thread.id,
         agent_id=AGENT_ID,
-        message="Answer from the first source only.",
+        message="In the first source only, which plans include single sign-on?",
         message_scope=MessageScope(
             indexed_documents=IndexedDocumentsScope(
                 enabled=True,
@@ -702,7 +761,7 @@ without ever going beyond it.
     with_linear = await client.chat.send(
         run.thread.id,
         agent_id=AGENT_ID,
-        message="Is there an open ticket about SSO?",
+        message="Check Linear: is there an open ticket about SSO?",
         message_scope=MessageScope(mcp=McpScope(enabled=True)),
     )
     print(await with_linear.text())
@@ -731,7 +790,7 @@ without ever going beyond it.
       -H "Content-Type: application/json" \
       -d '{
         "message": {
-          "content": "Answer from the first source only.",
+          "content": "In the first source only, which plans include single sign-on?",
           "scope": {"indexed_documents": {"enabled": true, "source_ids": [2292]}}
         },
         "options": {"agent_id": "'"$AGENT_ID"'"}

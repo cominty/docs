@@ -215,6 +215,48 @@ easy to get wrong:
   **Integrations** and **Skills** pages. Replace the document id workaround once
   the platform shows them.
 - The SDK's `file_ids` limit is 5, while the spec allows 20.
+- A scope (and `on_request` without a scope) does not remove a tool. The worker
+ prefixes the user message with a `<turn_context>` block (what is on or off,
+ plus a `<company-document-focus>` with the source and document ids). The tool
+ stays listed, and a call to one that is off returns an error. Only `never`
+ strips it. Agents sometimes try an off tool, then say they found nothing. The
+ docs tell users to name the capability or source in the message, and to add
+ the platform's mention tags: `<use tools="*_web"/>`,
+ `<use tools="company_doc_*"/>`, `<use agent="<connection>"/>`, and
+ `<scope type="document"><include_sources|include_documents>…`. The API does
+ not parse these tags. They are only text for the model. Home:
+ `guides/capabilities#help-the-agent-follow-a-scope`.
+- The recipes in `guides/capabilities-use-cases` start from `agent.chat` (no
+ capabilities saved: everything `always`, no filter, no memory). Its table is
+ at the top of the page. Each recipe has a **Starting point** line. Keep them
+ in sync when a recipe changes.
+
+## Built-in agents (`guides/agents`)
+
+Verified in the monorepo worker and API (`graph.py`, `workflows.py`,
+`routers/chat.py`, `common/chat.py`) and in the ENG-996 spec:
+
+- Chat (`agent.chat`) and Hive (`agent.hive`) run the same workflow and tools.
+ Only the model tier differs (`LLMModelChainTier.chat` / `.hive`). The models
+ are database config, not code. Do not name them in the docs.
+- Built-in agents have `capabilities: null`: every capability `always`, no
+ filter, nothing `on_request`. Memory is off on the platform (no namespace).
+- Not capabilities, always on for Chat and Hive: a Daytona sandbox per thread
+ (attached files land there), `present_file`, `ask_questions`, a `general`
+ sub-agent, and one sub-agent per MCP integration.
+- Planner (`agent.planner`) is a prompt optimizer. Its only tools are
+ `ask_questions`, `save_prompt`, and `edit_prompt`, plus memory with a
+ namespace. The API validates and attaches `file_ids`, but never sends them to
+ the planner worker. Capabilities and scopes are validated but ignored. The
+ plan is `structured_output.canvas` on the reply (`result` event
+ `data.metadata.canvas`), `null` when the plan did not change on that turn.
+ The platform shows it in a side panel with **Chat** and **Hive** buttons that
+ prefill a new thread.
+- Custom agents always run the Hive workflow, with their own capabilities,
+ instructions, and models (Hive's models if none are picked).
+- Video and music generation are available to every organization in production
+ (confirmed by the maintainer). The `_VEO_ORG_IDS` / `_LYRIA_ORG_IDS`
+ allowlists in older worker code no longer apply. Do not document them.
 
 ## Cancel, export and files (SDK 1.1.0)
 

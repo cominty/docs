@@ -8,12 +8,16 @@ web, search your documents, call a connected tool, load a skill, generate an
 image, or remember facts. Capabilities let you shape the agent's behavior from
 your code, without creating a new agent each time.
 
-You control them at two levels:
+You control them at three levels:
 
-- `thread_capabilities` is set when the thread starts and frozen for its whole
-  life.
-- `message_scope` applies to one message only. It can turn a capability on or
-  off, or narrow what it can reach.
+- The **agent** saves default capabilities on the platform.
+- `thread_capabilities` sets what the thread has. It is frozen when the thread
+  starts.
+- `message_scope` focuses one message. It turns a capability on or off, or
+  narrows what it can reach, for that message only.
+
+Keep one rule in mind: **capabilities give the thread its tools, and a scope
+focuses one message.** A scope never adds a tool that the thread does not have.
 
 This guide explains the model. To see it in action, start with the
 [use cases](/guides/capabilities-use-cases). It works the same with the
@@ -56,9 +60,43 @@ flowchart TD
 
 <Note>
   An agent with no capabilities saved behaves as if every capability were
-  `always`, with no filter. Setting capabilities on the **Agents** page is how
-  you make an agent more restrictive by default.
+  `always`, with no filter. That is the case of the built-in Chat and Hive
+  agents (see [Built-in agents](/guides/agents)). Setting capabilities on the
+  **Agents** page is how you make an agent more restrictive by default.
 </Note>
+
+<Warning>
+  The built-in Planner agent ignores capabilities and scopes, except memory. It
+  has no tools to restrict. See [Planner](/guides/agents#planner).
+</Warning>
+
+### The agent is a saved default
+
+An agent's capabilities are a preset. Each thread copies them when it starts.
+You could pass the same `thread_capabilities` on every `chat.start` and get the
+same threads. The agent saves you from sending them each time.
+
+### Capabilities give tools, scopes focus
+
+Capabilities, from the agent or from `thread_capabilities`, decide which tools
+the thread has. A capability the thread has is installed: its tools and their
+instructions are in the agent's system prompt, on every message. With `never`,
+the capability is not installed at all.
+
+A scope installs nothing and removes nothing. It switches an installed
+capability on or off for one message, or narrows its filter. The agent still
+sees the tool. If it calls a tool that is off for this message, the call returns
+an error that says so.
+
+| | Capabilities (agent or thread) | Message scope |
+| - | ------------------------------ | ------------- |
+| Answers | Which tools does this thread have? | What should this message focus on? |
+| Effect | Installs a capability, or removes it with `never` | Switches an installed capability on or off, or narrows its filter |
+| What the agent sees | The tools and their instructions | The same tools, plus a note before your message that says what is on for this message |
+| Lasts | The whole thread | One message |
+
+Use a scope to focus the agent on one task: only the web, only your documents,
+one or a few sources, or a few documents.
 
 ## Activation
 
@@ -85,6 +123,17 @@ Every capability you send has an `activation`. It says when the capability runs.
 
 With `on_request`, the capability lasts one message. Send the scope again on
 every message that needs it.
+
+### Choose an activation
+
+Pick the activation from how often the thread needs the capability:
+
+- **On every message:** `always`. Set it on the agent, so every thread has it
+  without asking. A message can still turn it off.
+- **Only on the messages you choose:** `on_request`. The capability stays off
+  until a scope turns it on, for one message.
+- **Never:** `never`. The capability is not installed. Once a thread starts
+  with `never`, no message can turn it on.
 
 ## Start a thread with capabilities
 
@@ -189,6 +238,10 @@ What a scope does depends on how the thread installed the capability:
 The scope never carries over. The next message without a scope goes back to
 the thread's activation.
 
+A scope is enforced, but the agent picks its tools from your words. Say in the
+message what you want it to use. See
+[Help the agent follow a scope](#help-the-agent-follow-a-scope).
+
 ## Filters
 
 Some capabilities can be limited to a list of ids. The filter names are
@@ -247,6 +300,104 @@ Filters take ids and names that you copy from the platform.
   check the id first.
 </Warning>
 
+## Help the agent follow a scope
+
+A scope is enforced: a tool that is off cannot run. But the agent chooses which
+tool to try from your message. A message that names what to use gets the right
+answer on the first try.
+
+### What the agent sees
+
+Before your message, Cominty adds a short note for the agent. It lists what is
+on and off for this message, and the sources or documents the scope keeps. The
+agent reads it, but it sometimes follows your words over the note. Two things
+can go wrong:
+
+- **It skips a capability you turned on.** A capability that is on is allowed,
+  not required. If the question does not call for a search, the agent can
+  answer from what it already knows.
+- **It tries a capability you turned off.** You turn the web off and keep your
+  documents on, then ask "How does my startup scale?". The agent tries the web,
+  the call is refused, and it answers that it cannot find the information. It
+  never searched your documents.
+
+### Say it in the message
+
+Name the capability, and the source if there is one, in the message itself.
+Ask "In my documents, how does my startup scale?" instead of "How does my
+startup scale?". With the same scope, the agent goes to your documents.
+
+### Add a focus tag
+
+For the strongest signal, add the tag that the platform's chat writes when you
+mention something in a message (`@` for the web, your documents, or an
+integration, `#` for a folder or a file). The agent's instructions describe
+these tags.
+
+| To focus on | Tag to put in the message |
+| ----------- | ------------------------- |
+| The web | `<use tools="*_web"/>` |
+| Your documents | `<use tools="company_doc_*"/>` |
+| An integration | `<use agent="linear"/>`, with the name from the **Integrations** page |
+
+For one source or one document, the tag also carries the id and a name:
+
+```xml
+<scope type="document"><include_sources><source id="2292" name="Board decks"/></include_sources></scope>
+
+<scope type="document"><include_documents><document id="2292#8058" name="2024 board deck"/></include_documents></scope>
+```
+
+A tag is only text for the agent. It does not restrict anything: the scope
+does. Send both, so the agent knows where to look and cannot look elsewhere.
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import IndexedDocumentsScope, MessageScope, WebScope
+
+    focus = (
+        '<scope type="document"><include_sources>'
+        '<source id="2292" name="Board decks"/>'
+        "</include_sources></scope>"
+    )
+
+    run = await client.chat.start(
+        agent_id=AGENT_ID,
+        message=f"{focus} In these documents, how does my startup scale?",
+        message_scope=MessageScope(
+            web=WebScope(enabled=False),
+            indexed_documents=IndexedDocumentsScope(
+                enabled=True,
+                source_ids=[2292],
+            ),
+        ),
+    )
+    print(await run.text())
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/chat" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "message": {
+          "content": "<scope type=\"document\"><include_sources><source id=\"2292\" name=\"Board decks\"/></include_sources></scope> In these documents, how does my startup scale?",
+          "scope": {
+            "web": {"enabled": false},
+            "indexed_documents": {"enabled": true, "source_ids": [2292]}
+          }
+        },
+        "options": {
+          "agent_id": "'"$AGENT_ID"'",
+          "user_id": "'"$COMINTY_USER_ID"'"
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
 ## Set capabilities on an agent
 
 An agent's own capabilities are set on
@@ -256,49 +407,68 @@ and `message_scope` start from there.
 
 ## Override an agent for one thread
 
-A capability you pass in `thread_capabilities` **replaces that capability
-entirely**. The capabilities you do not pass keep the agent's value.
+`thread_capabilities` follows two rules:
 
-Take an agent configured with web search always on, and document search limited
-to two sources:
+1. **The set of capabilities is merged.** A capability you pass is added to the
+   agent's set, or replaces the agent's version. A capability you do not pass
+   keeps the agent's value.
+2. **Each capability you pass is replaced entirely.** Its filters do not merge
+   with the agent's. A filter you leave out goes back to `ALL`.
+
+The examples below start from this agent:
 
 | Capability | On the agent |
 | ---------- | ------------ |
 | `web` | `always` |
-| `indexed_documents` | `always`, `source_ids=[2292, 2293]` |
+| `indexed_documents` | `always`, `source_ids=[2292]` |
+| `image_generation` | `always` |
+| `skills` | Not set |
 
-You start a thread and redefine only `indexed_documents`, with a `document_ids`
-filter and no `source_ids`:
+### Add a capability
 
 ```python
 thread_capabilities=AgentCapabilities(
-    indexed_documents=IndexedDocumentsCapability(
-        activation="always",
-        document_ids=["2292#8058"],
-    ),
+    skills=SkillsCapability(activation="always"),
+)
+```
+
+The thread has web search, document search on source `2292`, image
+generation, and skills. You added skills. The rest comes from the agent.
+
+### Remove a capability
+
+```python
+thread_capabilities=AgentCapabilities(web=WebCapability(activation="never"))
+```
+
+The thread has no web search, on any message, and no scope can bring it back.
+Documents and image generation keep the agent's values. Leaving `web` out never
+turns it off: you have to send `never`.
+
+### Redefine a capability
+
+```python
+thread_capabilities=AgentCapabilities(
+    indexed_documents=IndexedDocumentsCapability(activation="on_request"),
 )
 ```
 
 | Capability | On the thread | Why |
 | ---------- | ------------- | --- |
 | `web` | `always` | You did not pass it. The agent's value stays. |
-| `indexed_documents` | `always`, `document_ids=[...]`, `source_ids=ALL` | You passed it. It is rewritten, so the agent's `source_ids` are gone. |
+| `indexed_documents` | `on_request`, `source_ids=ALL`, `document_ids=ALL` | You passed it. It is rewritten, so the agent's source `2292` is gone. |
+| `image_generation` | `always` | You did not pass it. The agent's value stays. |
 
-To keep the agent's sources, repeat them in the new object:
-
-```python
-IndexedDocumentsCapability(
-    activation="always",
-    source_ids=[2292, 2293],
-    document_ids=["2292#8058"],
-)
-```
-
-To switch web search off, say so. Leaving `web` out never turns it off:
+You only meant to change the activation, but the thread can now search every
+source. To keep the agent's source, repeat it in the new object:
 
 ```python
-thread_capabilities=AgentCapabilities(web=WebCapability(activation="never"))
+IndexedDocumentsCapability(activation="on_request", source_ids=[2292])
 ```
+
+This is what lets you remove a source. If filters merged with the agent's, a
+thread could add sources but never take one away. Instead, you send the list you
+want, and the thread uses that list.
 
 <Warning>
   `thread_capabilities` can turn on a capability that the agent sets to

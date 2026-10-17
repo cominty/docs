@@ -1,0 +1,172 @@
+---
+title: "Built-in agents"
+description: "What Chat, Hive, and Planner can do by default, and which one to pick"
+---
+
+Every organization has three built-in agents, ready to use without any setup.
+Pass their id as `agent_id`.
+
+| Agent | `agent_id` | Pick it to |
+| ----- | ---------- | ---------- |
+| Chat | `__cominty_agents::agent.chat` | Get quick, direct answers |
+| Hive | `__cominty_agents::agent.hive` | Run longer, multi-step work |
+| Planner | `__cominty_agents::agent.planner` | Turn a request into a detailed plan, without running it |
+
+Chat and Hive do the work. Planner only prepares it: it never searches, reads
+your files, or runs anything.
+
+## Chat and Hive
+
+Chat and Hive have the same tools and the same default capabilities. Only the
+model differs. Cominty picks the models of each agent, and may change them.
+
+### Default capabilities
+
+The built-in agents have no capabilities saved. Every capability is `always`,
+with no filter. Nothing is `on_request` by default.
+
+| Capability | Default | What it means |
+| ---------- | ------- | ------------- |
+| `web` | `always` | Web search on every message |
+| `indexed_documents` | `always`, no filter | Every source and document the user can read |
+| `mcp` | `always`, no filter | Every integration available to the user |
+| `skills` | `always`, no filter | Every skill available to the user |
+| `image_generation` | `always` | Image generation on every message |
+| `video_generation` | `always` | Video generation on every message |
+| `music_generation` | `always` | Music generation on every message |
+| `memory` | Off | No namespace, so no memory until you set one |
+
+To change a default for one thread, pass that capability in
+`thread_capabilities`. For example, to search the web only on the messages that
+ask for it:
+
+```python
+from cominty_sdk import AgentCapabilities, WebCapability
+
+run = await client.chat.start(
+    agent_id="__cominty_agents::agent.hive",
+    message="Summarize our onboarding process.",
+    thread_capabilities=AgentCapabilities(
+        web=WebCapability(activation="on_request"),
+    ),
+)
+print(await run.text())
+```
+
+See [Override an agent for one thread](/guides/capabilities#override-an-agent-for-one-thread)
+for the rules, and [Memory](/guides/capabilities#memory) to give a thread a
+namespace.
+
+### Always on, outside capabilities
+
+Some features are not capabilities. You cannot turn them off.
+
+- **A sandbox.** Each thread gets a Linux environment. The agent can run code
+  there, read the files you attach with `file_ids`, and create files. The files
+  it shares with you come back in the reply's `files`.
+- **Clarifying questions.** When a request is unclear, the agent can end its
+  turn with questions instead of an answer. See
+  [Answer the agent's questions](/sdk/quickstart#answer-the-agents-questions).
+- **Sub-agents.** The agent can hand a task to a general-purpose sub-agent.
+  Each integration also runs as a sub-agent. See
+  [Sub-agents have their own step counter](/guides/max-steps#sub-agents-have-their-own-step-counter).
+
+## Planner
+
+Planner is a separate agent with one job: it turns your request into a detailed
+plan for another agent. It never does the task itself.
+
+### What it does
+
+1. It asks clarifying questions when the request is unclear.
+2. It writes the plan in Markdown, in your language: the goal, a step-by-step
+   execution plan, and how to check the result. The plan is self-contained, so
+   another agent can run it without this conversation.
+3. It edits the plan when you send feedback in the same thread.
+
+The plan is written for an agent that has web search, document search, memory,
+and a sandbox, such as Hive.
+
+### What it does not have
+
+- **No tools besides questions and the plan.** No web search, no document
+  search, no integrations, no skills, no image, video, or music generation, and
+  no sandbox. It cannot check a fact or open a document.
+- **No files.** The API accepts `file_ids`, but Planner never receives them. Put
+  what matters from the file in your message.
+- **Capabilities change nothing.** `thread_capabilities` and `message_scope` are
+  accepted and checked, but Planner ignores them. Memory is the one exception:
+  with a namespace, Planner can read and write memory files.
+
+### Get the plan
+
+The plan is not the reply text. The reply text is Planner's message to you. The
+plan is in `structured_output["canvas"]` on the reply.
+
+`canvas` is `None` on a reply where Planner did not write or change the plan,
+for example when it only asked questions. Keep the last plan you received.
+
+```python
+PLANNER_ID = "__cominty_agents::agent.planner"
+
+run = await client.chat.start(
+    agent_id=PLANNER_ID,
+    message="Prepare a weekly watch on our three main competitors.",
+)
+reply = await run.result()
+
+if reply.questions:
+    for question in reply.questions:
+        print(question.prompt, question.options)
+    answer = await client.chat.send(
+        run.thread.id,
+        agent_id=PLANNER_ID,
+        message="Acme, Globex, and Initech. A report every Monday, in English.",
+    )
+    reply = await answer.result()
+
+plan = (reply.structured_output or {}).get("canvas")
+```
+
+Over HTTP, the plan is in `structured_output.canvas` on the assistant message
+returned by `GET /chat/{thread_id}`. While you stream, it is in
+`data.metadata.canvas` of the `result` event.
+
+### Run the plan
+
+Planner does not run the plan. Start a new thread with Chat or Hive, and send
+the plan as the message.
+
+```python
+if plan:
+    execution = await client.chat.start(
+        agent_id="__cominty_agents::agent.hive",
+        message=plan,
+    )
+    print(await execution.text())
+```
+
+On the platform, the plan opens in a side panel. Its **Chat** and **Hive**
+buttons open a new thread with the plan in the message box.
+
+## Your own agents
+
+The agents you create on the **Agents** page of
+[platform.cominty.ai](https://platform.cominty.ai) run like Hive, with the same
+tools and sandbox. They add what you set on the agent:
+
+- **Capabilities.** An agent with none saved has every capability `always`, like
+  Chat and Hive.
+- **Instructions.** They are added to the agent's system prompt.
+- **Models.** If you pick none, the agent uses Hive's.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Capabilities" icon="sliders-horizontal" href="/guides/capabilities">
+    Change what an agent can use, for a thread or for one message.
+  </Card>
+  <Card title="Use cases" icon="lightbulb" href="/guides/capabilities-use-cases">
+    Recipes that start from Chat and change one capability at a time.
+  </Card>
+</CardGroup>
