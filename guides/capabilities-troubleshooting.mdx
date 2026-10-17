@@ -33,6 +33,14 @@ now done by `message_scope` and `thread_capabilities`.
 `disabled_tools` was a list of things to turn off. A scope is a list of things
 to change, so "everything except Notion" becomes "these connections".
 
+<Tip>
+  The agent reads a scope the way it read `disabled_tools` and `source_ids`:
+  the tools stay visible, and a call to one that is off is refused. If your
+  messages already said "in my documents" or "without searching the web", keep
+  that wording. See
+  [Help the agent follow a scope](/guides/capabilities#help-the-agent-follow-a-scope).
+</Tip>
+
 ```python
 # before (0.5.0)
 await client.chat.start(
@@ -216,8 +224,9 @@ all raise `InvalidParams`. Use `WebCapability(activation="never")` and
 ### Losing the agent's `source_ids`
 
 A capability you pass replaces the agent's version entirely. If you redefine
-`indexed_documents` with only `document_ids`, the agent's `source_ids` go back to
-`ALL`. Repeat every filter you want to keep. See
+`indexed_documents`, even only to change its activation to `on_request`, every
+filter you leave out goes back to `ALL`. The thread can then search every
+source. Repeat every filter you want to keep. See
 [Override an agent for one thread](/guides/capabilities#override-an-agent-for-one-thread).
 
 ### A capability stays on because you did not mention it
@@ -231,6 +240,24 @@ The API does not check source ids, document ids, connection names, or skill ids
 on a chat. A wrong id is accepted and finds nothing. If the agent answers that it
 sees no documents, or no Linear, check the id and the name against the platform.
 See [Find your ids](/guides/capabilities#find-your-ids).
+
+### The agent does not follow the scope
+
+The request succeeds, but the answer ignores the scope:
+
+- You turned the web off and kept your documents on. The agent answers that it
+  cannot find the information.
+- You turned a capability on. The agent answers without using it.
+
+A scope switches a tool off, but the agent still sees it. In the first case, the
+agent tried the web, the call was refused, and it stopped there without
+searching your documents. In the second case, it treated the capability as
+optional, which it is.
+
+Say in the message what to use: "In my documents, how does my startup scale?"
+rather than "How does my startup scale?". For the strongest signal, add the
+focus tag of the source or capability. See
+[Help the agent follow a scope](/guides/capabilities#help-the-agent-follow-a-scope).
 
 ### Expecting a scope to last
 
