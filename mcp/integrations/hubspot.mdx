@@ -1,0 +1,257 @@
+---
+title: "HubSpot"
+description: "Install, connect, configure, and uninstall the Cominty app for HubSpot"
+icon: "users"
+---
+
+The Cominty app for HubSpot lets your Cominty agents work with your HubSpot
+CRM in plain language. Agents can:
+
+- Search and read contacts, companies, deals, tickets, and activities.
+- Summarize an account before a meeting, or list the open deals of a pipeline.
+- Create or update records, notes, and tasks, **only after you confirm** the
+  proposed change.
+
+Cominty uses the remote HubSpot MCP server, hosted by HubSpot at
+`https://mcp.hubspot.com`. Every action respects your existing HubSpot user
+permissions: the agent only sees and changes what your HubSpot user can see
+and change.
+
+## Before you start
+
+- You have a Cominty account on [platform.cominty.ai](https://platform.cominty.ai).
+  To share the connection with your whole workspace, you need to be a Cominty
+  admin.
+- You have a HubSpot account, and a HubSpot user allowed to install apps (a
+  **Super Admin**, or a user with the **App Marketplace** permission).
+- There is no OAuth client to create: Cominty provides the app, named
+  **Cominty for Hubspot** in HubSpot. The connection uses OAuth 2.1 with PKCE.
+
+<Tip>
+  Connect with a HubSpot user whose permissions match what you want the agents
+  to reach. The agent never gets more access than that user.
+</Tip>
+
+## Install the app
+
+<Steps>
+  <Step title="Open the integration">
+    On [platform.cominty.ai](https://platform.cominty.ai), open **Integrations**
+    in the left menu. Search for `HubSpot` and click the **HubSpot Official**
+    card.
+
+    <Frame caption="Search for HubSpot and choose HubSpot Official">
+      ![The Cominty Integrations page, filtered on HubSpot, with the HubSpot Official card](/images/mcp/hubspot-integrations.png)
+    </Frame>
+  </Step>
+  <Step title="Choose who can use it">
+    The **HubSpot Official** dialog opens. Under **Availability**, pick
+    **Organization** to share the connection with everyone in your workspace
+    (admins manage it), or **Personal** to keep it private to you.
+
+    Under **Configuration**, the HubSpot authentication (`HUBSPOTOFFICIALAUTH`)
+    is already set: there is nothing to fill in. You can fill in **Agent
+    configuration** now or later. See [Configure the app](#configure-the-app).
+
+    <Frame caption="The HubSpot Official dialog: Availability and Configuration">
+      ![The HubSpot Official integration dialog in Cominty, with Personal selected and the Connect button](/images/mcp/hubspot-dialog.png)
+    </Frame>
+  </Step>
+  <Step title="Connect">
+    Click **Connect**. A HubSpot page opens: "Connect Cominty for Hubspot to
+    HubSpot". Sign in to HubSpot if asked.
+  </Step>
+  <Step title="Choose your HubSpot account">
+    Select the HubSpot account to connect, then click **Select account**.
+
+    <Frame caption="Selecting the HubSpot account to connect">
+      ![The HubSpot account selection screen for Cominty for Hubspot](/images/mcp/hubspot-choose-account.png)
+    </Frame>
+  </Step>
+  <Step title="Review and approve the requested access">
+    HubSpot lists what Cominty for Hubspot can access in your account:
+
+    - **Currently granted**: the required scopes. Expand the section to see the
+      full list (CRM records, activities, properties, owners, pipelines,
+      conversations, marketing data).
+    - **Optional**: extra scopes you can choose to grant, such as creating and
+      editing custom objects, their properties and pipelines. Some optional
+      scopes need a higher HubSpot subscription (for example Enterprise).
+      HubSpot shows a lock and a tooltip when they are not available.
+
+    Review the list, then click **Connect app**.
+
+    <Frame caption="The optional scopes, with a lock on those that need a higher subscription">
+      ![The HubSpot screen listing the optional scopes requested by Cominty for Hubspot, with a tooltip on a locked one](/images/mcp/hubspot-scopes.png)
+    </Frame>
+
+    <Frame caption="The Currently granted section expanded, and the Connect app button">
+      ![The HubSpot screen with the Currently granted scopes expanded and the Connect app button](/images/mcp/hubspot-connect-app.png)
+    </Frame>
+
+    <Note>
+      Until the app is verified by HubSpot, HubSpot shows an "unverified app"
+      warning and asks you to type a confirmation sentence before you click
+      **Connect**. This step disappears once the app is listed on the HubSpot
+      Marketplace.
+    </Note>
+  </Step>
+  <Step title="Check the status">
+    You come back to the Integrations page of Cominty. Open the
+    **HubSpot Official** card again: the dialog shows a **Connected** badge.
+    Click **Test connection** to check it.
+
+    <Frame caption="HubSpot connected in Cominty">
+      ![The HubSpot Official dialog with the Connected badge, the Enabled toggle, and the Test connection button](/images/mcp/hubspot-connected.png)
+    </Frame>
+  </Step>
+  <Step title="Test it">
+    Open a new conversation and ask: "Who am I in HubSpot, and which objects
+    can I access?"
+  </Step>
+</Steps>
+
+<Info>
+  If the connection fails after you approve the access, or if you need help,
+  reach out to [hello@cominty.ai](mailto:hello@cominty.ai).
+</Info>
+
+## Configure the app
+
+HubSpot questions often need context the agent cannot guess: your pipelines,
+your key properties, your conventions. Put them in the integration's
+**Agent configuration**, once, instead of typing them in every message.
+
+The two fields do different jobs:
+
+| Field | Read by | Use it for |
+| ----- | ------- | ---------- |
+| **When to use** | The main agent, to decide when to hand a task to HubSpot | The situations HubSpot covers: clients, deals, contacts, tickets |
+| **How to use it** | The HubSpot sub-agent that does the work | Pipelines, key properties, defaults, rules |
+
+Example for **How to use it**:
+
+```text
+"Clients" are companies with the lifecycle stage Customer.
+The main sales pipeline is "Sales Pipeline". Renewals are in "Renewals".
+The renewal date is in the company property renewal_date.
+Never create or update a record without showing the change and getting confirmation.
+Answer in the user's language.
+```
+
+For the full model (what each field does, how the main agent and the sub-agent
+share the work, and how to write good instructions), see
+[Connector instructions](/mcp/connector-instructions).
+
+## Use the app
+
+There is no background sync. The agent acts only when a user asks it to, in a
+Cominty conversation. To point a message at HubSpot, type `@hub` and pick
+**HubSpot Official** from the menu, then write your request.
+
+<Frame caption="Picking HubSpot Official from the chat with @hub">
+  ![The Cominty chat input with @hub typed and HubSpot Official suggested in the Integrations menu](/images/mcp/hubspot-use-in-chat.png)
+</Frame>
+
+**Read actions** run directly. Example prompts:
+
+- "Summarize the company Acme: contacts, open deals, and last activities."
+- "List the deals in the stage Negotiation that close this quarter."
+- "Find the open tickets for the company Acme."
+
+**Write actions** always need your confirmation. The agent shows the proposed
+change, and nothing is written until you confirm:
+
+- "Add a note to the deal Acme Renewal with the summary of today's meeting."
+- "Create a follow-up task for next Monday on the contact Jane Doe."
+
+### What agents can do
+
+Available tools depend on your HubSpot subscription, your user permissions,
+and your account configuration. Main tools:
+
+| Tool | What it does |
+| ---- | ------------ |
+| `get_user_details` | Read the connected user, the account, and the objects you can read or write |
+| `search_crm_objects` | Search and filter CRM records |
+| `get_crm_objects` | Fetch records by ID |
+| `query_crm_data` | Query CRM data with filters, aggregation, and sorting |
+| `search_properties` / `get_properties` | Find and read property definitions |
+| `search_owners` | Find record owners |
+| `manage_crm_objects` | Create or update records and activities, after confirmation |
+
+## Limits
+
+- A search returns 200 results per page at most. A fetch by ID takes 100 IDs
+  at most.
+- `query_crm_data` does not support joins, subqueries, or association
+  traversal.
+- Search is based on the HubSpot CRM search API, without semantic search.
+- When HubSpot adds tools, new scopes may be needed: reconnect the app to grant
+  them.
+
+## Manage the connection
+
+Open **Integrations** → **HubSpot Official** at any time to:
+
+- **Pause it**: turn off **Enabled** ("Allow the agent to use this
+  integration"). The connection is kept, but agents stop using HubSpot until
+  you turn it back on.
+- **Share it**: click **Move to organization** to make a personal connection
+  available to your whole workspace.
+- **Check it**: click **Test connection**.
+
+From your code, you can turn the connection off for one message, or limit a
+thread to some connections. See
+[Capabilities](/guides/capabilities) and the
+[use case on connections](/guides/capabilities-use-cases#recipe-3-keep-some-connections-or-none).
+
+## Disconnect the app
+
+<Steps>
+  <Step title="Open the integration">
+    On [platform.cominty.ai](https://platform.cominty.ai), open **Integrations**
+    and choose **HubSpot Official**.
+  </Step>
+  <Step title="Disconnect">
+    Click **Disconnect**. The HubSpot access token is revoked, and the HubSpot
+    MCP server is no longer reachable from Cominty.
+  </Step>
+</Steps>
+
+<Warning>
+  **What happens to your data:**
+
+  - Cominty agents can no longer read or write your HubSpot data.
+  - Nothing is deleted in HubSpot. Records, notes, and tasks created through
+    Cominty stay in your account.
+  - Cominty does not sync or copy your CRM: agents query HubSpot live. HubSpot
+    data quoted in past conversations stays in your Cominty history until you
+    delete those conversations.
+  - To request deletion of your data, contact
+    [privacy@cominty.ai](mailto:privacy@cominty.ai). See our
+    [Privacy Policy](https://app.cominty.ai/policies/privacy-policy).
+</Warning>
+
+## Uninstall the app
+
+Cominty for Hubspot is not installed inside your HubSpot account: it is an
+OAuth connection between Cominty and HubSpot. **Disconnecting it in Cominty, as
+described above, is enough to remove all access.** There is nothing else to
+uninstall.
+
+If you prefer to revoke the access from HubSpot, follow the HubSpot article
+[Uninstall an app](https://knowledge.hubspot.com/integrations/connect-apps-to-hubspot#uninstall-an-app).
+The effect on your data is the same as disconnecting.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+| ------- | ------------ |
+| You cannot install the app in HubSpot | Your HubSpot user lacks the **App Marketplace** permission. Ask a Super Admin. |
+| The agent says it cannot see a record | Your HubSpot user has no access to it. The agent follows your HubSpot permissions. |
+| A write action is refused | Your user has no write access to that object, or your subscription does not include it. Ask the agent to run `get_user_details`. |
+| A new feature asks for more access | HubSpot added tools that need new scopes. Disconnect, then connect again. |
+| The connection stops working | The access was revoked in HubSpot, or the integration is turned off. Check **Enabled**, click **Test connection**, or connect again. |
+
+Need help? Contact [hello@cominty.ai](mailto:hello@cominty.ai).

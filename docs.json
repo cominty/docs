@@ -65,7 +65,8 @@
           {
             "group": "Integrations",
             "pages": [
-              "mcp/integrations/bigquery"
+              "mcp/integrations/bigquery",
+              "mcp/integrations/hubspot"
             ]
           }
         ]
