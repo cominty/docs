@@ -378,6 +378,154 @@ print(await run.text())
 
 ▶ [`examples/08_mcp_linear.py`](https://github.com/cominty/python-sdk/blob/main/examples/08_mcp_linear.py)
 
+## List the MCP integrations
+
+`mcp.list` returns the integrations your API key can use. A server's `name` is
+the value `McpCapability.connections` stores. By default it keeps only the
+servers that are turned on.
+
+```python
+servers = await client.mcp.list()
+for server in servers:
+    print(server.name, server.title, server.requires_oauth_connect)
+
+everything = await client.mcp.list(enabled=None)   # every server, on or off
+```
+
+`requires_oauth_connect` is `True` when someone must connect the integration on
+the platform first. If the manifest cannot be loaded, the SDK raises
+`ServerError`.
+
+▶ [`examples/19_mcp_servers.py`](https://github.com/cominty/python-sdk/blob/main/examples/19_mcp_servers.py)
+
+## Create a custom agent
+
+Create an agent from code, with its own instructions and capabilities. The agent
+is owned by the user who created your API key. Chat with it like any other
+agent.
+
+```python
+from cominty_sdk import AgentCapabilities, McpCapability, WebCapability
+
+agent = await client.agents.create(
+    name="Integration helper",
+    instructions="Use your connected integration when it helps. Be brief.",
+    scope="organization",
+    capabilities=AgentCapabilities(
+        mcp=McpCapability(activation="always", connections=[servers[0].name]),
+        web=WebCapability(activation="never"),
+    ),
+)
+run = await client.chat.start(
+    agent_id=agent.id,
+    message="Which integration can you use? Answer in one sentence.",
+)
+print(await run.text())
+
+agent = await client.agents.update(agent.id, name="Helper v2", description=None)
+await client.agents.delete(agent.id)
+```
+
+`update` is partial: `None` clears `description`, `instructions`, and
+`capabilities`, and a capabilities object is merged capability by capability.
+See [Custom agents](/guides/custom-agents).
+
+▶ [`examples/16_agents.py`](https://github.com/cominty/python-sdk/blob/main/examples/16_agents.py)
+
+## Choose the agent's models
+
+`agents.list_models` gives the model ids. `set_models` replaces the agent's
+chain: the first model answers, and the next ones take over when it fails.
+
+```python
+models = await client.agents.list_models()
+agent = await client.agents.set_models(
+    agent.id, model_ids=[models[1].id, models[0].id]
+)
+print([model.name for model in agent.models])
+```
+
+On a built-in agent, `set_models` changes the chain of the whole organization.
+
+## Give an agent a skill
+
+A skill is a folder with a `SKILL.md`. `skills.create` zips the folder and
+uploads it. Give it to an agent with `SkillsCapability`.
+
+```python
+from pathlib import Path
+from cominty_sdk import AgentCapabilities, SkillsCapability
+
+skill = await client.skills.create(Path("release-notes"), display_name="Release notes")
+agent = await client.agents.create(
+    name="Greeter",
+    capabilities=AgentCapabilities(
+        skills=SkillsCapability(activation="always", include=[skill.id]),
+    ),
+)
+run = await client.chat.start(agent_id=agent.id, message="Give me the QA greeting.")
+print(await run.text())
+```
+
+See [Skills](/guides/skills) for the folder layout and the versions.
+
+▶ [`examples/17_skills.py`](https://github.com/cominty/python-sdk/blob/main/examples/17_skills.py)
+
+## Search your own files
+
+`sources.create` turns local files into an indexed source in one call. Wait for
+it to be `synced`, then give its `id` to an agent. The chat must run with the
+key owner's `user_id`, which is `agent.owner`.
+
+```python
+from pathlib import Path
+from cominty_sdk import (
+    AgentCapabilities,
+    AsyncCominty,
+    IndexedDocumentsCapability,
+)
+
+source = await client.sources.create(Path("docs"), name="Product docs")
+source = await client.sources.wait_synced(source.pid, timeout=420, interval=3)
+
+agent = await client.agents.create(
+    name="Docs assistant",
+    instructions="Answer only from the company documents. Cite the documents you used.",
+    capabilities=AgentCapabilities(
+        indexed_documents=IndexedDocumentsCapability(
+            activation="always", source_ids=[source.id]
+        ),
+    ),
+)
+async with AsyncCominty(user_id=agent.owner) as owner_client:
+    run = await owner_client.chat.start(agent_id=agent.id, message="What is the code word?")
+    message = await run.result()
+print(message.content)
+```
+
+`source.pid` (a string) goes to every `client.sources` method. `source.id` (an
+integer) goes to `source_ids`. See [Sources](/guides/sources).
+
+▶ [`examples/15_sources.py`](https://github.com/cominty/python-sdk/blob/main/examples/15_sources.py)
+
+## Resolve a citation
+
+An answer cites documents as `<cite document_id="2698#10778" .../>`.
+`documents.get` resolves that id to the source and the file.
+
+```python
+import re
+
+cites = re.findall(r'<cite document_id="([^"]+)"', message.content)
+document = await client.documents.get(cites[0])
+print(document.document_name, document.source_pid, document.document_uri)
+
+files = await client.sources.list_files(document.source_pid)
+content = await client.sources.download_file(files[0].id)   # bytes
+```
+
+An unknown id raises `NotFoundError`. There is no call that lists documents.
+
 ## Handle errors
 
 ```python

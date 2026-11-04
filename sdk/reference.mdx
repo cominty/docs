@@ -24,7 +24,9 @@ AsyncCominty(
   never take `user_id`.
 - Use it as an async context manager (`async with`) or call `await client.close()`.
 - Properties: `client.user_id`, `client.base_url`.
-- Sub-resources: `client.chat`, `client.threads`, `client.memory`.
+- Sub-resources: `client.chat`, `client.threads`, `client.memory`, and, since
+  1.2.0, `client.mcp`, `client.agents`, `client.skills`, `client.sources`,
+  `client.documents`. The last five do not take `user_id` either.
 
 See [Configuration](/sdk/overview#configuration) for the full settings table and
 resolution order.
@@ -245,6 +247,171 @@ value the API returns. Do not assume a namespace named `default`. For files
 written before namespaces existed, see
 [Memory namespaces](/guides/memory-namespaces#files-written-before-namespaces-existed).
 
+### `client.mcp`
+
+Lists the MCP integrations the API key can use (`GET /mcp/manifest`). See
+[MCP integrations](/mcp/overview#list-the-integrations-from-code).
+
+| Method | Signature | Returns |
+| ------ | --------- | ------- |
+| `list` | `list(*, enabled: bool \| None = True)` | `list[McpServerOut]` (may be empty) |
+
+- `enabled=True` (the default) keeps the servers that are turned on.
+  `enabled=False` keeps the ones that are off. `enabled=None` returns every
+  server, in API order. The API returns all of them, and the SDK filters on
+  `is_enabled`.
+- `name` is the value to store in `McpCapability.connections` and
+  `McpScope.connections`.
+- `origin` is `"builtin"` or `"remote"`, and `scope` is `"organization"` or
+  `"user"`, today. Both are plain strings, and other values may appear.
+- `requires_oauth_connect` is `True` when someone must connect the integration
+  with OAuth on the platform first. `connection_status` (for example
+  `"connected"`) is present when known.
+- If the manifest cannot be loaded, the API answers 500 and the SDK raises
+  [`ServerError`](#exceptions).
+
+▶ [`examples/19_mcp_servers.py`](https://github.com/cominty/python-sdk/blob/main/examples/19_mcp_servers.py)
+
+### `client.agents`
+
+Manages custom agents and their model chain. Concepts:
+[Custom agents](/guides/custom-agents). Arguments after `*` are keyword-only.
+
+| Method | Signature | Returns |
+| ------ | --------- | ------- |
+| `list` | `list()` | `list[AgentSummaryOut]` |
+| `list_models` | `list_models()` | `list[LLMModelSummaryOut]` |
+| `get` | `get(agent_id)` | `AgentOut` |
+| `create` | `create(*, name, description=None, instructions=None, scope="private", capabilities=None, allow_execution_options_override=False, model_ids=None)` | `AgentOut` |
+| `update` | `update(agent_id, *, name=..., description=..., instructions=..., scope=..., capabilities=..., allow_execution_options_override=...)` | `AgentOut` |
+| `set_models` | `set_models(agent_id, *, model_ids)` | `AgentOut` |
+| `delete` | `delete(agent_id)` | `None` |
+
+| Case | Result |
+| ---- | ------ |
+| Empty `name`, `description` over 500 characters, `instructions` over 30000, or an empty `model_ids` | [`InvalidParams`](#exceptions) before any request |
+| `update` with no argument, or `None` for `name`, `scope`, or `allow_execution_options_override` | [`InvalidParams`](#exceptions) before any request |
+| `None` for `description`, `instructions`, or `capabilities` on `update` | Clears the value |
+| `skills.include` on `create` names a skill the key cannot read | [`APIError`](#exceptions) (422) |
+| Unknown agent, a built-in agent, an agent of another organization, or another member's private agent | [`NotFoundError`](#exceptions), `detail` `Not Found` |
+| `set_models` with an unknown model id | [`NotFoundError`](#exceptions), `detail` `Bad model_ids` |
+
+- `scope` is `"private"` (the key owner only) or `"organization"` (every
+  member). The type is `Scope`.
+- `update` is partial: only the arguments you pass are sent. A `capabilities`
+  object is merged capability by capability: each one you pass replaces the
+  stored one, the others stay.
+- `create(model_ids=...)` sets the model chain. Omit it for the organization's
+  default chain. The chain is a failover order.
+- On a built-in agent (`managed` is `True`), `set_models` changes the chain of the
+  whole organization for that agent. `update` and `delete` raise
+  `NotFoundError`.
+- `list()` returns the built-in agents, the organization agents, and the key
+  owner's private agents. It returns `AgentSummaryOut`: no `instructions`, no
+  `models`. Call `get` for the full `AgentOut`.
+- The legacy `execution_options` and `memory_namespace` are not exposed. Use
+  `capabilities` (`capabilities.memory` sets the namespace).
+- `delete` is permanent. The API answers 204, and the SDK returns `None`.
+
+▶ [`examples/16_agents.py`](https://github.com/cominty/python-sdk/blob/main/examples/16_agents.py)
+
+### `client.skills`
+
+Manages custom skills. Concepts: [Skills](/guides/skills).
+
+| Method | Signature | Returns |
+| ------ | --------- | ------- |
+| `list` | `list()` | `list[SkillOut]` |
+| `create` | `create(file, *, display_name, scope="private")` | `SkillOut` |
+| `update` | `update(skill_id, *, display_name=None, active=None, scope=None)` | `SkillOut` |
+| `upload_version` | `upload_version(skill_id, file)` | `SkillOut` |
+| `delete` | `delete(skill_id)` | `None` |
+
+| Case | Result |
+| ---- | ------ |
+| `file` is a plain `str`, the folder has no `SKILL.md`, `display_name` is not 1 to 100 characters, or the archive is over 30 MB | [`InvalidParams`](#exceptions) before any request |
+| `update` with nothing to change | [`InvalidParams`](#exceptions) before any request |
+| The file cannot be read | `OSError` |
+| The zip layout or the frontmatter is wrong | [`APIError`](#exceptions) (422), `detail` starts with `Invalid zip structure.` for a layout |
+| The archive is too large for the server | [`APIError`](#exceptions) (413) |
+| Two uploads of one skill within one second | [`APIError`](#exceptions) (500) |
+| `update`, `upload_version`, or `delete` on a built-in skill, or one the key owner does not own | [`NotFoundError`](#exceptions) |
+
+`file` is a folder `Path` (zipped in memory, `SKILL.md` at its root, entries
+starting with `.` skipped), a `.zip` `Path`, or `bytes` (a zip archive). The
+skill takes the key's surface: there is no `surface` argument.
+
+▶ [`examples/17_skills.py`](https://github.com/cominty/python-sdk/blob/main/examples/17_skills.py)
+
+### `client.sources`
+
+Turns local files into an indexed document source. Concepts:
+[Sources](/guides/sources).
+
+| Method | Signature | Returns |
+| ------ | --------- | ------- |
+| `create` | `create(files, *, name=None)` | `SourceOut` (`pending` or `syncing`) |
+| `list` | `list()` | `list[SourceOut]` |
+| `get` | `get(source_pid)` | `SourceOut` |
+| `update` | `update(source_pid, *, name)` | `SourceOut` |
+| `add_files` | `add_files(source_pid, files)` | `list[FileOut]`, in upload order |
+| `list_files` | `list_files(source_pid)` | `list[FileOut]` |
+| `remove_file` | `remove_file(source_pid, file_id)` | `None` |
+| `download_file` | `download_file(file_id)` | `bytes` |
+| `start`, `pause`, `sync`, `archive` | `start(source_pid)` and the same for the others | `SourceOut` |
+| `wait_synced` | `wait_synced(source_pid, *, timeout=600.0, interval=5.0)` | `SourceOut` (`synced`) |
+
+| Case | Result |
+| ---- | ------ |
+| `files` is a plain `str`, an empty list, a missing file, two files with the same name, or more than 50 files | [`InvalidParams`](#exceptions) before any upload |
+| `update` with a `name` that is not a string | [`InvalidParams`](#exceptions) |
+| An empty `file_id` (`remove_file`, `download_file`) | `ValueError` |
+| An unknown source, file, or `pid` | [`NotFoundError`](#exceptions) |
+| `start`, `sync`, or `archive` from a status that does not allow it | [`APIError`](#exceptions) (400), `detail` `Operation is not valid` |
+| The sync ends in another status than `synced` | [`SourceSyncFailed`](#exceptions) (carries `.source`) |
+| The sync is still running after `timeout` | `asyncio.TimeoutError` |
+| A storage refusal, or too many drives | [`APIError`](#exceptions) |
+| An unusable upload permission | [`SDKError`](#exceptions) |
+
+- `create` makes a drive, uploads each file through a presigned URL, then creates
+  a private drag-and-drop source over it. Files upload one after the other, and
+  the mimetype is guessed from the extension (`application/octet-stream`
+  otherwise).
+- `files` is one file `Path`, a folder `Path` (its top-level files, hidden files
+  skipped, no recursion), or an iterable of file `Path`s.
+- `source.pid` (a string) goes to every method here. `source.id` (an integer)
+  goes to `IndexedDocumentsCapability(source_ids=[...])` and
+  `IndexedDocumentsScope(source_ids=[...])`.
+- `list()` returns the organization's sources and the ones the key created,
+  archived ones included.
+- `get(pid)` reads the list and picks, so it costs a `list()`.
+- `add_files` and `remove_file` request a sync when the source accepts one
+  (`synced`, `error`, `out_of_sync`, `daily_quota_reached`). The 50-file cap
+  counts the files already in the source.
+- `download_file` fetches a presigned URL valid 5 minutes, then the bytes. The
+  whole file is held in memory.
+- `archive` is terminal. It removes the indexed documents and the files, and the
+  source stays listed with `status == "archived"`.
+- Only drag-and-drop sources can be created with a key.
+
+Server limits: 100 drives per user (each `create` makes one, and a drive cannot
+be deleted) and 50 files per source. A chat over a source must run with the key
+owner's `user_id`. See
+[Sources](/guides/sources#chat-with-the-key-owners-user-id).
+
+▶ [`examples/15_sources.py`](https://github.com/cominty/python-sdk/blob/main/examples/15_sources.py)
+
+### `client.documents`
+
+| Method | Signature | Returns |
+| ------ | --------- | ------- |
+| `get` | `get(document_id)` | `DocumentMetadataOut` |
+
+Resolves a composite document id, such as the one in a `<cite document_id="..."/>`
+tag. The id may contain `#`: the SDK URL-encodes it. An empty id raises
+`ValueError` before any request. An unknown id raises
+[`NotFoundError`](#exceptions). There is no call that lists documents.
+
 ## The run handle
 
 Returned by `chat.start` (`StartedChat`) and by `chat.send` / `chat.stream`
@@ -362,6 +529,89 @@ unknown fields, so they are forward-compatible.
 
 <ResponseField name="MemoryFileSummaryOut" type="object">
   Returned by `memory.list`. Everything in `MemoryFileOut` except `content`.
+</ResponseField>
+
+<ResponseField name="McpServerOut" type="object">
+  Returned by `mcp.list`. `name: str` (the value for `connections`) ·
+  `title: str` · `description: str` · `is_enabled: bool` · `origin: str` ·
+  `scope: str` · `requires_oauth_connect: bool` · `connection_status: str | None` ·
+  `icon_uri?` · `mcp_url?` · `owner_id?` · `created_at?` · `updated_at?`
+</ResponseField>
+
+<ResponseField name="AgentSummaryOut" type="object">
+  Returned by `agents.list`. `id: str` · `name: str` · `description: str | None` ·
+  `capabilities: AgentCapabilities | None` · `memory_namespace: str | None` ·
+  `managed: bool` (`True` for built-in agents) · `scope: Scope` ·
+  `owner: str` (the `user_id` to chat with over the key's sources) ·
+  `execution_options: dict | None` (legacy). Capabilities the SDK does not know
+  yet are left out.
+</ResponseField>
+
+<ResponseField name="AgentOut" type="AgentSummaryOut + details">
+  Returned by `agents.get`, `create`, `update`, and `set_models`. Everything in
+  `AgentSummaryOut`, plus `instructions: str | None` ·
+  `allow_execution_options_override: bool` ·
+  `models: list[LLMModelSummaryOut]` (the chain, in failover order).
+</ResponseField>
+
+<ResponseField name="LLMModelSummaryOut" type="object">
+  Returned by `agents.list_models`. `id: str` · `name: str`
+</ResponseField>
+
+<ResponseField name="SkillOut" type="object">
+  Returned by `skills.list`, `create`, `update`, and `upload_version`. `id: str` ·
+  `display_name: str` · `active: bool` · `scope: Scope | None` (`None` for a
+  built-in skill) · `source: SkillSource` · `frontmatter: SkillFrontmatter` ·
+  `created_at: datetime` · `updated_at: datetime`
+</ResponseField>
+
+<ResponseField name="SkillFrontmatter" type="object">
+  The YAML frontmatter of `SKILL.md`, parsed by the server. `name: str` ·
+  `description: str` · `license: str | None` · `compatibility: str | None` ·
+  `metadata: dict[str, str]` · `allowed_tools: list[str]`
+</ResponseField>
+
+<ResponseField name="SourceOut" type="object">
+  Returned by the `client.sources` methods that return a source. `id: int` (for
+  `source_ids`) · `pid: str` (for every `client.sources` method) · `name: str` ·
+  `scope: Scope` · `created_by: str` · `store: SourceStore` ·
+  `status: SourceStatus` · `size: int` · `embedded_size: int` ·
+  `documents_synced: int` · `documents_failed: int` · `oversized_documents: int` ·
+  `documents_embedded: int` · `last_synced_at: datetime | None` ·
+  `archived_at: datetime | None` · `created_at: datetime` · `config: dict` ·
+  `drive_id` (property, `str | None`)
+</ResponseField>
+
+<ResponseField name="FileOut" type="object">
+  A file of a source. `id: str` · `name: str` · `size: int` · `mimetype: str` ·
+  `created_at: datetime` · `updated_at: datetime`
+</ResponseField>
+
+<ResponseField name="DocumentMetadataOut" type="object">
+  Returned by `documents.get`. `document_id: str` · `source_id: int` ·
+  `source_pid: str` · `source_type: SourceStore` · `document_name: str` ·
+  `document_uri: str | None` · `document_extension: str` ·
+  `document_mime_type: str`
+</ResponseField>
+
+<ResponseField name="Scope" type="Literal">
+  `"private"` (the key owner only) or `"organization"` (every member). Used by
+  agents, skills, and sources.
+</ResponseField>
+
+<ResponseField name="SkillSource" type="enum">
+  `cominty` (built in, read-only) or `custom` (uploaded by the organization).
+</ResponseField>
+
+<ResponseField name="SourceStore" type="enum">
+  `draganddrop`, `googledrive`, or `sharepoint`. An API key can only create
+  `draganddrop` sources.
+</ResponseField>
+
+<ResponseField name="SourceStatus" type="enum">
+  `pending` · `syncing` · `synced` · `error` · `out_of_sync` · `cancelling` ·
+  `pausing` · `paused` · `archived` · `disconnected` · `inoperative_connection` ·
+  `expired_connection` · `invalid_configuration` · `daily_quota_reached`
 </ResponseField>
 
 ## Capabilities
@@ -503,9 +753,19 @@ ComintyError
 │   └── ServerError       # 5xx
 ├── APIConnectionError    # network error / timeout (no response)
 ├── StreamInterrupted     # server shut down mid-stream. .partial: Message
+├── SourceSyncFailed      # a source did not reach "synced". .source: SourceOut
 ├── InvalidParams         # client-side validation failed. .errors: list[InvalidParam]
 └── SDKError              # internal SDK bug
 ```
+
+`cominty_sdk.PermissionError` shadows the Python built-in `PermissionError` once
+you write `from cominty_sdk import PermissionError`. Import it as
+`cominty_sdk.PermissionError`, or under another name, if your code also catches
+the built-in.
+
+`SourceSyncFailed` is not an `APIError`: `sources.wait_synced` raises it when the
+source settles in a status other than `synced`, such as `error`, `paused`, or
+`daily_quota_reached`. Read `exc.source.status` to see which one.
 
 ### `RateLimitError`
 

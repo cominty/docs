@@ -315,7 +315,8 @@ but they are off for this message. The agent drafts the template without calling
 them. On the next message, with no scope, it can call Linear again. With
 `connections=["linear"]`, the agent can call Linear for this message. Slack
 stays unavailable, even though it is connected to the agent. The connection
-names are the ones on the **Integrations** page of the platform.
+names are the ones on the **Integrations** page of the platform, or the `name`
+of each server that `await client.mcp.list()` returns.
 
 ## Recipe 4: no tools at all
 

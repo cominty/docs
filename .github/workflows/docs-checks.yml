@@ -35,3 +35,6 @@ jobs:
 
       - name: Check Python code snippets parse cleanly
         run: python scripts/check_snippets.py
+
+      - name: Check images are ready for Mintlify (size, no Git LFS)
+        run: python scripts/check_images.py

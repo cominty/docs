@@ -42,6 +42,14 @@
             ]
           },
           {
+            "group": "Build with code",
+            "pages": [
+              "guides/custom-agents",
+              "guides/skills",
+              "guides/sources"
+            ]
+          },
+          {
             "group": "Concepts",
             "pages": [
               "guides/memory-namespaces",
@@ -136,6 +144,65 @@
                   "GET /memory/file",
                   "PUT /memory/file",
                   "DELETE /memory/file"
+                ]
+              },
+              {
+                "group": "MCP",
+                "icon": "plug",
+                "expanded": true,
+                "pages": [
+                  "GET /mcp/manifest"
+                ]
+              },
+              {
+                "group": "Agents",
+                "icon": "bot",
+                "expanded": true,
+                "pages": [
+                  "GET /agents",
+                  "GET /agents/models",
+                  "GET /agents/{agent_pid}",
+                  "POST /agents",
+                  "PUT /agents/{agent_pid}",
+                  "PUT /agents/{agent_pid}/models",
+                  "DELETE /agents/{agent_pid}"
+                ]
+              },
+              {
+                "group": "Skills",
+                "icon": "sparkles",
+                "expanded": true,
+                "pages": [
+                  "GET /skills",
+                  "POST /skills",
+                  "PUT /skills/{skill_pid}",
+                  "POST /skills/{skill_pid}/versions",
+                  "DELETE /skills/{skill_pid}"
+                ]
+              },
+              {
+                "group": "Sources",
+                "icon": "folder-search",
+                "expanded": true,
+                "pages": [
+                  "GET /dc/sources",
+                  "POST /dc/sources",
+                  "PUT /dc/sources/{source_pid}",
+                  "PUT /dc/sources/{source_pid}/status",
+                  "POST /drives",
+                  "GET /drives/{drive_pid}",
+                  "GET /drives/{drive_pid}/upload",
+                  "POST /drives/upload",
+                  "GET /files/{file_pid}",
+                  "DELETE /files/{file_pid}"
+                ]
+              },
+              {
+                "group": "Documents",
+                "icon": "file-text",
+                "expanded": true,
+                "pages": [
+                  "GET /documents"
                 ]
               }
             ]

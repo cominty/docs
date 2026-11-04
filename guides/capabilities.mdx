@@ -54,7 +54,7 @@ flowchart TD
 
 | Layer | Where you set it | Lasts | Can do |
 | ----- | ---------------- | ----- | ------ |
-| Agent | [platform.cominty.ai](https://platform.cominty.ai), **Agents** page | Until you edit the agent | Define the defaults |
+| Agent | [platform.cominty.ai](https://platform.cominty.ai), **Agents** page, or `agents.create` with an API key ([Custom agents](/guides/custom-agents)) | Until you edit the agent | Define the defaults |
 | Thread | `thread_capabilities` on `chat.start` | The whole thread | Override the agent, capability by capability |
 | Message | `message_scope` on `chat.start` and `chat.send` | One message | Turn off, turn on, or narrow. Never widen |
 
@@ -272,14 +272,15 @@ For documents, sending one filter on a message replaces both. A scope with only
 
 ## Find your ids
 
-Filters take ids and names that you copy from the platform.
+Filters take ids and names that you copy from the platform, or read with an API
+key.
 
 | Filter | Where to find it |
 | ------ | ---------------- |
-| `source_ids` | On [platform.cominty.ai/knowledge](https://platform.cominty.ai/knowledge), the **Documents** page. Copy the **ID** shown under the name of each source. |
-| `document_ids` | The platform does not show them yet. Ask an agent that can search your documents: "Find the 2024 board deck and give me its document id." Then paste the id in your scope or capability. An id is the source id, a `#`, and the document's own identifier, for example `2292#8058`. That identifier is not always a number: it can also be a string of letters and digits, so copy the whole id as the agent gives it. |
-| `connections` | The name of the integration on the **Integrations** page, for example `linear`. |
-| `include` (skills) | The skill id on the **Skills** page. |
+| `source_ids` | On [platform.cominty.ai/knowledge](https://platform.cominty.ai/knowledge), the **Documents** page. Copy the **ID** shown under the name of each source. In code, it is the number `id` of each item of `client.sources.list()` (not the string `pid`). See [Sources](/guides/sources). |
+| `document_ids` | The platform does not show them yet. Ask an agent that can search your documents: "Find the 2024 board deck and give me its document id." Then paste the id in your scope or capability. An id is the source id, a `#`, and the document's own identifier, for example `2292#8058`. That identifier is not always a number: it can also be a string of letters and digits, so copy the whole id as the agent gives it. The `document_id` of a `<cite .../>` tag in an answer is the same id: see [Read a citation](/guides/sources#read-a-citation). |
+| `connections` | The name of the integration on the **Integrations** page, for example `linear`. In code, it is the `name` of each item of `client.mcp.list()`. |
+| `include` (skills) | The skill id on the **Skills** page. In code, it is the `id` of each item of `client.skills.list()`. See [Skills](/guides/skills). |
 
 <Frame caption="The Documents page of the platform. Copy the ID shown under a source name.">
   <img

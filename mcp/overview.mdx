@@ -13,6 +13,24 @@ agent. You do not change any code. You can turn them off for one message with a
 `McpCapability(connections=...)`. See [Capabilities](/guides/capabilities) and
 the [use case on connections](/guides/capabilities-use-cases#recipe-3-keep-some-connections-or-none).
 
+## List the integrations from code
+
+With an API key, `client.mcp.list()` returns the integrations you can use. A
+server's `name` is the value to put in `McpCapability.connections`.
+
+```python
+servers = await client.mcp.list()           # only the ones turned on
+everything = await client.mcp.list(enabled=None)
+
+for server in everything:
+    print(server.name, server.is_enabled, server.requires_oauth_connect)
+```
+
+`requires_oauth_connect` is `True` when someone must connect the integration with
+OAuth on the platform first. The call does not connect anything. To create an
+agent that uses a server, see [Custom agents](/guides/custom-agents). Over HTTP,
+the call is `GET /mcp/manifest`.
+
 ## Connect an integration
 
 <Steps>
