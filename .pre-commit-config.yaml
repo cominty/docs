@@ -1,0 +1,24 @@
+repos:
+  - repo: local
+    hooks:
+      - id: optimize-images
+        name: Shrink images to 2000x2000 at most
+        entry: python scripts/optimize_images.py
+        language: python
+        additional_dependencies: [pillow]
+        files: \.(png|jpe?g|webp)$
+        exclude: ^draft/
+
+      - id: check-images
+        name: Check images are servable by Mintlify
+        entry: python scripts/check_images.py
+        language: python
+        pass_filenames: false
+        files: ^(images/|logo/|\.gitattributes$)
+
+      - id: check-snippets
+        name: Check Python snippets parse
+        entry: python scripts/check_snippets.py
+        language: python
+        pass_filenames: false
+        files: \.(mdx|md)$

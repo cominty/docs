@@ -1,0 +1,298 @@
+---
+title: "Custom agents"
+description: "Create and manage agents with an API key: capabilities, models, and what the key can see"
+---
+
+An API key can create and manage agents, the same way an admin does on the
+**Agents** page of [platform.cominty.ai](https://platform.cominty.ai). A custom
+agent runs like [Hive](/guides/agents), with the capabilities, instructions, and
+models you give it. Pass its id as `agent_id` to any chat call.
+
+This page works for the [Python SDK](/sdk/overview) and for HTTP. Each snippet
+has a tab for both.
+
+## What an API key can do
+
+The key acts as an **admin of its own organization**. This frames every
+resource of this guide, and of [Skills](/guides/skills) and
+[Sources](/guides/sources).
+
+| The key can | The key cannot |
+| ----------- | -------------- |
+| Create agents and skills for the whole organization (`scope="organization"`) | See another member's **private** agents, skills, or drives. They are absent from lists, and a read by id returns 404. |
+| Read the model catalog and set an agent's model chain | See agents created on the other product surface. A Platform key does not see Portal agents. |
+| Create sources from local files | Create a Google Drive or SharePoint source. They need the console's OAuth flow. |
+
+Everything the key creates is **owned by the user who created the key**. The
+agent's `owner` is that user's id, not the key's. Call that user the key owner.
+
+<Warning>
+  A key is powerful. It can edit and delete the organization's agents, and it
+  can change a built-in agent's model chain for every user. Store it like a
+  password.
+</Warning>
+
+## Find the values you need
+
+An agent refers to integrations and models by id. Read them from the API.
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    servers = await client.mcp.list()          # integrations that are turned on
+    models = await client.agents.list_models() # models you can chain
+
+    print([server.name for server in servers])  # ['datagouv', 'linear', ...]
+    print(repr(models[0]))                      # LLMModelSummaryOut(id='...', name='...')
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl "https://ds.cominty.com/mcp/manifest" \
+      -H "x-cominty-token: $COMINTY_API_KEY"
+
+    curl "https://ds.cominty.com/agents/models" \
+      -H "x-cominty-token: $COMINTY_API_KEY"
+    ```
+  </Tab>
+</Tabs>
+
+- A server's `name` is the value to store in `McpCapability.connections`. The
+  default `mcp.list()` keeps only the integrations that are turned on. Pass
+  `enabled=None` to see every server. See
+  [`client.mcp`](/sdk/reference#client-mcp).
+- `requires_oauth_connect` is `True` when someone must connect the integration
+  with OAuth in the console first. See [MCP integrations](/mcp/overview).
+- A model's `id` goes in `model_ids`.
+
+## Create an agent
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import AgentCapabilities, McpCapability, WebCapability
+
+    agent = await client.agents.create(
+        name="Linear helper",
+        description="Created through the API key",
+        instructions="Use your Linear tools when asked about Linear. Be brief.",
+        scope="organization",
+        capabilities=AgentCapabilities(
+            mcp=McpCapability(activation="always", connections=["linear"]),
+            web=WebCapability(activation="never"),
+        ),
+        model_ids=[models[0].id],
+    )
+    print(agent.id, agent.owner)
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/agents" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Linear helper",
+        "description": "Created through the API key",
+        "instructions": "Use your Linear tools when asked about Linear. Be brief.",
+        "scope": "organization",
+        "capabilities": {
+          "mcp": {"activation": "always", "connections": ["linear"]},
+          "web": {"activation": "never"}
+        },
+        "model_ids": ["MODEL_ID"]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+The reply is the full agent:
+
+```json
+{
+  "id": "xK3mPq9RzT2v",
+  "name": "Linear helper",
+  "description": "Created through the API key",
+  "capabilities": {
+    "web": {"activation": "never"},
+    "mcp": {"activation": "always", "connections": ["linear"]},
+    "memory": {"activation": "never"}
+  },
+  "managed": false,
+  "scope": "organization",
+  "owner": "user_31HPTBuBvX20xlQNAbvxjOxPbKB",
+  "instructions": "Use your Linear tools when asked about Linear. Be brief.",
+  "allow_execution_options_override": false,
+  "models": [{"id": "MODEL_ID", "name": "..."}]
+}
+```
+
+- `scope` is `"private"` (the key owner only, the default) or
+  `"organization"` (every member).
+- A capability you do not set gets its default, here `memory: never`. Over HTTP,
+  the capabilities you did not set come back as `null`. The SDK leaves them out.
+- Omit `model_ids` to use the organization's default model chain.
+- `capabilities.memory` sets the agent's memory namespace. The older
+  `execution_options` and `memory_namespace` fields are deprecated, and the SDK
+  does not expose them.
+- Capabilities work as on a thread. See [Capabilities](/guides/capabilities).
+  The agent's capabilities are the saved default of the first of the
+  [three layers](/guides/capabilities#three-layers).
+
+## Chat with it
+
+Use the id like any other agent.
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    run = await client.chat.start(
+        agent_id=agent.id,
+        message="Use your Linear tools to list my Linear teams.",
+    )
+    message = await run.result()
+    print(message.status.value, "|", message.content)
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    Send `POST /chat` with `options.agent_id` set to the agent's id. See the
+    [API reference](/api-reference).
+  </Tab>
+</Tabs>
+
+An MCP server is mounted on the agent as a sub-agent. The message's tool calls
+show a `subagent` call, not the integration's tool names. To turn MCP off for one
+message, use a `McpScope`. See
+[Keep some connections, or none](/guides/capabilities-use-cases#recipe-3-keep-some-connections-or-none).
+
+## Update an agent
+
+An update is partial: send only what you want to change.
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import AgentCapabilities, WebCapability
+
+    agent = await client.agents.update(
+        agent.id, name="Linear helper v2", description=None
+    )
+    agent = await client.agents.update(
+        agent.id,
+        capabilities=AgentCapabilities(web=WebCapability(activation="always")),
+    )
+    print(agent.capabilities.model_dump())
+    # {'web': {'activation': 'always'},
+    #  'mcp': {'activation': 'always', 'connections': ['linear']},
+    #  'memory': {'activation': 'never'}}
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X PUT "https://ds.cominty.com/agents/$AGENT_ID" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Linear helper v2",
+        "description": null,
+        "capabilities": {"web": {"activation": "always"}}
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+- `None` (HTTP: `null`) clears `description`, `instructions`, and
+  `capabilities`.
+- `capabilities` is **merged capability by capability**. Each capability you
+  send replaces the stored one, and the others stay. In the example, `web`
+  changed and `mcp` was kept.
+- You cannot clear `name`, `scope`, or `allow_execution_options_override`. The
+  SDK raises `InvalidParams` for `None`, and for an update with no argument.
+- An organization agent owned by someone else can be updated and deleted with the
+  key.
+
+## Choose the models
+
+An agent has a model chain. The first model answers, and the next ones take over
+when it fails.
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    models = await client.agents.list_models()
+    agent = await client.agents.set_models(
+        agent.id, model_ids=[models[1].id, models[0].id]
+    )
+    print([model.name for model in agent.models])  # failover order
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X PUT "https://ds.cominty.com/agents/$AGENT_ID/models" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"model_ids": ["MODEL_ID_1", "MODEL_ID_2"]}'
+    ```
+  </Tab>
+</Tabs>
+
+- An unknown id returns 404 with `detail` `Bad model_ids`. An empty list returns
+  422. The SDK raises `InvalidParams` for an empty list, before any request.
+- `create(model_ids=...)` sets the chain at creation. Omit it for the
+  organization's default chain.
+
+<Warning>
+  On a built-in agent, such as Chat or Hive, `set_models` changes the chain of
+  the whole organization for that agent. It affects every user. The built-in
+  agents cannot be edited or deleted otherwise.
+</Warning>
+
+## Read and delete
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    summaries = await client.agents.list()   # AgentSummaryOut: no instructions, no models
+    agent = await client.agents.get(agent.id)  # AgentOut: the full agent
+    await client.agents.delete(agent.id)     # returns None
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl "https://ds.cominty.com/agents" -H "x-cominty-token: $COMINTY_API_KEY"
+    curl "https://ds.cominty.com/agents/$AGENT_ID" -H "x-cominty-token: $COMINTY_API_KEY"
+    curl -X DELETE "https://ds.cominty.com/agents/$AGENT_ID" -H "x-cominty-token: $COMINTY_API_KEY"
+    ```
+    `DELETE` answers 204 with no body.
+  </Tab>
+</Tabs>
+
+`list` returns the built-in agents (`managed` is `true`), the organization
+agents, and the key owner's private agents. A private agent of another member is
+not there, and `get`, `update`, and `delete` on it return 404.
+
+A delete is permanent. The messages the agent handled keep working, and report
+their agent as `"ARCHIVED"`.
+
+## Errors
+
+| What happened | SDK | HTTP |
+| ------------- | --- | ---- |
+| Unknown agent, built-in agent on `update` or `delete`, another organization, or another member's private agent | `NotFoundError`, `detail` `Not Found` | 404 `Not Found` |
+| Unknown model id | `NotFoundError`, `detail` `Bad model_ids` | 404 `Bad model_ids` |
+| Empty `name`, `description` over 500 characters, `instructions` over 30000, empty `model_ids`, or an `update` with nothing to change | `InvalidParams`, before any request | 422 |
+| `skills.include` names a skill the key cannot read | `APIError` (422) | 422 |
+| Delete twice | `NotFoundError` | 404 |
+
+For the exception classes, see the [SDK reference](/sdk/reference#exceptions).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Skills" icon="sparkles" href="/guides/skills">
+    Upload a skill and give it to an agent.
+  </Card>
+  <Card title="Sources" icon="folder-search" href="/guides/sources">
+    Index local files and let an agent search them.
+  </Card>
+</CardGroup>

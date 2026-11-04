@@ -1,0 +1,232 @@
+---
+title: "Skills"
+description: "Upload a skill with an API key and give it to an agent"
+---
+
+A skill is a folder of instructions that an agent loads when a task matches it.
+You can upload skills with an API key, the same way an admin does on the
+**Skills** page of [platform.cominty.ai](https://platform.cominty.ai). Read
+[Custom agents](/guides/custom-agents#what-an-api-key-can-do) first for what an
+API key can and cannot see.
+
+Each snippet has a tab for the [Python SDK](/sdk/overview) and for HTTP.
+
+## Write a skill
+
+A skill is a folder whose `SKILL.md` opens with YAML frontmatter, following the
+[agentskills.io specification](https://agentskills.io/specification). The folder
+can hold supporting files next to it.
+
+```text
+release-notes/
+  SKILL.md
+  reference.md
+```
+
+```markdown
+---
+name: release-notes
+description: Gives the QA greeting. Use when asked for the QA greeting.
+license: MIT
+metadata:
+  author: docs-qa
+allowed-tools: Read Write
+---
+# QA greeter
+
+When the user asks for the QA greeting, reply with exactly `QA-HELLO-4F2A` and nothing else.
+```
+
+The `description` is what the agent reads to decide when to load the skill. Say
+what the skill does and when to use it.
+
+## Upload it
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from pathlib import Path
+
+    skill = await client.skills.create(
+        Path("release-notes"),
+        display_name="Release notes",
+    )
+    print(skill.model_dump_json(indent=2))
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    The request is `multipart/form-data`, and the file is a zip.
+
+    ```bash
+    zip -r release-notes.zip release-notes
+
+    curl -X POST "https://ds.cominty.com/skills" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -F display_name="Release notes" \
+      -F scope=private \
+      -F "file=@release-notes.zip;type=application/zip"
+    ```
+
+    The answer is **201**.
+  </Tab>
+</Tabs>
+
+```json
+{
+  "id": "apqy_zTDwaGR",
+  "created_at": "2026-11-04T11:21:54.699485Z",
+  "updated_at": "2026-11-04T11:21:54.699485Z",
+  "display_name": "Release notes",
+  "active": true,
+  "scope": "private",
+  "source": "custom",
+  "frontmatter": {
+    "name": "release-notes",
+    "description": "Gives the QA greeting. Use when asked for the QA greeting.",
+    "license": "MIT",
+    "compatibility": null,
+    "metadata": {"author": "docs-qa"},
+    "allowed_tools": ["Read", "Write"]
+  }
+}
+```
+
+- `id` is what an agent's `include` list takes.
+- `scope` is `"private"` (the key owner only, the default) or `"organization"`.
+- `source` is `"custom"` for a skill you uploaded and `"cominty"` for a built-in
+  one.
+- `allowed_tools` comes from the space-separated `allowed-tools` field.
+
+### What `file` can be
+
+The SDK accepts three inputs.
+
+| Input | What happens |
+| ----- | ------------ |
+| A folder `Path` | Zipped in memory and sent as `<folder name>.zip`. `SKILL.md` must be at its root, which the SDK checks. Entries inside the folder whose name starts with `.` are skipped. |
+| A `.zip` `Path` | Sent as is. |
+| `bytes` | Sent as is. It must be a zip archive. |
+
+A plain `str` raises `InvalidParams`. Wrap a path in `Path(...)`.
+
+The server accepts two zip layouts:
+
+- `SKILL.md` at the root of the archive.
+- One top-level folder that holds `SKILL.md`, and nothing else at the root.
+
+Any other layout returns 422, and `detail` starts with `Invalid zip structure.`
+A missing or invalid frontmatter also returns 422, with the reason.
+
+## Give it to an agent
+
+Put the skill's `id` in a `SkillsCapability`.
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import AgentCapabilities, SkillsCapability
+
+    agent = await client.agents.create(
+        name="Greeter",
+        capabilities=AgentCapabilities(
+            skills=SkillsCapability(activation="always", include=[skill.id]),
+        ),
+    )
+    run = await client.chat.start(agent_id=agent.id, message="Give me the QA greeting.")
+    print((await run.result()).content)   # QA-HELLO-4F2A
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl -X POST "https://ds.cominty.com/agents" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Greeter",
+        "capabilities": {
+          "skills": {"activation": "always", "include": ["SKILL_ID"]}
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+The agent loads the skill, then follows it. An `include` id that the key cannot
+read makes the creation fail with 422. For the other ways to narrow skills, see
+[Capabilities](/guides/capabilities). Skills have no per-message scope.
+
+## Manage a skill
+
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    skills = await client.skills.list()
+
+    skill = await client.skills.update(
+        skill.id, display_name="Release notes v1", active=False, scope="organization"
+    )
+    skill = await client.skills.update(skill.id, active=True)
+
+    skill = await client.skills.upload_version(skill.id, Path("release-notes"))
+    print(skill.frontmatter.description, skill.updated_at)
+
+    await client.skills.delete(skill.id)
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```bash
+    curl "https://ds.cominty.com/skills" -H "x-cominty-token: $COMINTY_API_KEY"
+
+    curl -X PUT "https://ds.cominty.com/skills/$SKILL_ID" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"active": false}'
+
+    curl -X POST "https://ds.cominty.com/skills/$SKILL_ID/versions" \
+      -H "x-cominty-token: $COMINTY_API_KEY" \
+      -F "file=@release-notes.zip"
+
+    curl -X DELETE "https://ds.cominty.com/skills/$SKILL_ID" \
+      -H "x-cominty-token: $COMINTY_API_KEY"
+    ```
+  </Tab>
+</Tabs>
+
+- `list` returns the built-in Cominty skills (`source` is `"cominty"`, `scope` is
+  `None`, read-only), the organization skills, and the key owner's skills. A
+  private skill of another member is not there.
+- `update` sends only the fields you pass: `display_name`, `active`, and
+  `scope`. Passing none raises `InvalidParams`. `active=False` keeps the skill,
+  and agents stop using it.
+- `upload_version` makes the new version the default. `frontmatter` and
+  `updated_at` then describe it. Versions are tagged to the second: two uploads
+  of one skill within a second collide and return 500. Space them out.
+- `delete` is permanent and removes every version. HTTP answers 200 with a
+  `null` body.
+- A built-in skill, and a skill the key owner does not own, return 404 on
+  `update`, `upload_version`, and `delete`.
+
+## Limits and errors
+
+| What happened | SDK | HTTP |
+| ------------- | --- | ---- |
+| `display_name` is empty or over 100 characters | `InvalidParams`, before any request | 422 over 100 characters |
+| The archive is over 30 MB | `InvalidParams`, before any request | 413 |
+| The folder has no `SKILL.md`, or the input is a `str` | `InvalidParams`, before any request | - |
+| The zip layout or the frontmatter is wrong | `APIError` (422) | 422 |
+| The file cannot be read | `OSError` | - |
+| Unknown skill, or a built-in one, on `update` or `delete` | `NotFoundError` | 404 |
+
+Do not send a `surface` field over HTTP. The skill takes the key's surface, and
+the call returns 400 `Forbidden field`.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Custom agents" icon="bot" href="/guides/custom-agents">
+    Create the agent that uses the skill.
+  </Card>
+  <Card title="Sources" icon="folder-search" href="/guides/sources">
+    Index local files and let an agent search them.
+  </Card>
+</CardGroup>

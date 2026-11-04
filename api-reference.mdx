@@ -1,13 +1,15 @@
 ---
 title: "API reference"
-description: "The Cominty chat API: the HTTP endpoints behind the Python SDK"
+description: "The Cominty API: the HTTP endpoints behind the Python SDK"
 ---
 
 The Cominty API is a standard HTTPS/JSON API for chatting with agents,
 managing conversation threads, handling file uploads/downloads and message
-exports, and storing memory files in named namespaces. Every endpoint below is
-called by the [Python SDK](/sdk/overview). Use the SDK for the smoothest
-experience, or call them directly.
+exports, storing memory files in named namespaces, and configuring what a
+signed-in admin configures in the console: MCP integrations, agents, skills,
+document sources, and documents. Every endpoint below is called by the
+[Python SDK](/sdk/overview). Use the SDK for the smoothest experience, or call
+them directly.
 
 ## Base URL
 
@@ -82,6 +84,30 @@ before the prefix existed has no `sk-cmt-` and keeps working when sent as is.
 | `GET /memory/file` | Get a memory file, including content |
 | `PUT /memory/file` | Partially update a memory file's content/purpose |
 | `DELETE /memory/file` | Delete a memory file |
+| `GET /mcp/manifest` | List the MCP integrations the key can use |
+| `GET /agents` | List agents (summaries) |
+| `GET /agents/models` | List the models you can put in a model chain |
+| `GET /agents/{agent_pid}` | Get an agent with its instructions and models |
+| `POST /agents` | Create a custom agent |
+| `PUT /agents/{agent_pid}` | Update an agent (partial) |
+| `PUT /agents/{agent_pid}/models` | Replace an agent's model chain |
+| `DELETE /agents/{agent_pid}` | Delete an agent |
+| `GET /skills` | List skills |
+| `POST /skills` | Create a skill from a zip |
+| `PUT /skills/{skill_pid}` | Update a skill |
+| `POST /skills/{skill_pid}/versions` | Upload a new version of a skill |
+| `DELETE /skills/{skill_pid}` | Delete a skill |
+| `GET /dc/sources` | List document sources |
+| `POST /dc/sources` | Create a drag-and-drop source over a drive |
+| `PUT /dc/sources/{source_pid}` | Rename a source |
+| `PUT /dc/sources/{source_pid}/status` | Start, pause, sync, or archive a source |
+| `POST /drives` | Create a drive |
+| `GET /drives/{drive_pid}` | Get a drive and its files |
+| `GET /drives/{drive_pid}/upload` | Get a presigned upload permission for a drive |
+| `POST /drives/upload` | Confirm an upload, registering the file |
+| `GET /files/{file_pid}` | Get a presigned download URL for a file |
+| `DELETE /files/{file_pid}` | Delete a file |
+| `GET /documents` | Resolve a document id from a citation |
 
 <Warning>
   Response shapes differ per endpoint. `POST /chat` returns a full **thread**,
@@ -223,6 +249,170 @@ legacy fields are deprecated and will be removed in a later version.
   Ids and names in filters are not checked. An unknown source id, document id,
   connection name, or skill id is accepted and matches nothing.
 </Warning>
+
+## Configure with an API key
+
+An API key acts as an **admin of its own organization**. It can call the
+agent, skill, drive, source, and document endpoints below, and read the model
+catalog. These endpoints do not take `user_id`. For the concepts and the
+Python SDK, see [Custom agents](/guides/custom-agents), [Skills](/guides/skills),
+and [Sources](/guides/sources). This section covers what is specific to the
+endpoints.
+
+- Everything a key creates is owned by **the user who created the key**.
+  `owner` on an agent and `created_by` on a source are that user's id, not the
+  key's.
+- A key never sees another member's **private** agents, skills, or drives. A
+  direct read, update, or delete returns **404** `Not Found`, and they are
+  absent from lists.
+- A key only sees its own product surface. A Platform key does not see agents
+  created on the other surface.
+- Send one credential. If `x-cominty-token` is present, an `Authorization`
+  header is ignored.
+
+### MCP endpoint
+
+`GET /mcp/manifest` returns `{"servers": [...]}`. Use a server's `name` in
+`capabilities.mcp.connections`. Servers that are off are still listed, with
+`is_enabled` `false`. The optional fields (`connection_status`, `icon_uri`,
+`mcp_url`, `owner_id`, `created_at`, `updated_at`) are **omitted** when
+unknown, not `null`. A manifest that cannot be loaded returns **500** with the
+plain text `Internal Server Error`, so do not parse that body as JSON.
+
+### Agent endpoints
+
+| Call | Success | Errors |
+| ---- | ------- | ------ |
+| `GET /agents` | **200**, summaries: built-in agents, organization agents, and the key owner's private agents | |
+| `GET /agents/models` | **200**, a list of `{id, name}` | |
+| `GET /agents/{agent_pid}` | **200**, the full agent | **404** `Not Found`: unknown id, another organization, or another member's private agent |
+| `POST /agents` | **200**, the agent | **422**: invalid body, or `skills.include` names a skill the key cannot read |
+| `PUT /agents/{agent_pid}` | **200**, the agent | **404** `Not Found`: also for a built-in agent |
+| `PUT /agents/{agent_pid}/models` | **200**, the agent | **404** `Bad model_ids`: unknown id. **422**: empty list |
+| `DELETE /agents/{agent_pid}` | **204**, no body | **404**: unknown, built-in, or already deleted |
+
+- `PUT /agents/{agent_pid}` is partial. A JSON `null` clears `description`,
+  `instructions`, and `capabilities`. `capabilities` is merged capability by
+  capability: each one you send replaces the stored one, the others stay.
+- Omit `model_ids` on `POST /agents` to use the organization's default model
+  chain. The chain is a failover order: the first model answers.
+- On a built-in agent, `PUT /agents/{agent_pid}/models` changes the chain for the
+  whole organization.
+- An organization agent owned by someone else can be updated and deleted with
+  the key.
+- `execution_options` and `memory_namespace` are deprecated. Use
+  `capabilities` (`capabilities.memory` sets the namespace).
+
+### Skill endpoints
+
+`POST /skills` and `POST /skills/{skill_pid}/versions` are
+`multipart/form-data`. Send the zip in the `file` field. `POST /skills` also
+takes `display_name` (1 to 100 characters) and `scope`.
+
+```bash
+curl -X POST "https://ds.cominty.com/skills" \
+  -H "x-cominty-token: $COMINTY_API_KEY" \
+  -F display_name="Release notes" \
+  -F scope=private \
+  -F "file=@release-notes.zip;type=application/zip"
+```
+
+| Case | Result |
+| ---- | ------ |
+| Created | **201**, the skill |
+| `SKILL.md` at the zip root, or one top-level folder that holds it and nothing else at the root | Accepted |
+| Any other layout | **422**, `detail` starts with `Invalid zip structure.` |
+| Missing or invalid frontmatter | **422**, with the reason |
+| Archive over 30 MB | **413** |
+| Two uploads of one skill within the same second | **500**: space them out |
+| `PUT` or `DELETE` on a built-in skill, or on a skill the key owner does not own | **404** `Not Found` |
+
+`DELETE /skills/{skill_pid}` returns **200** with a `null` body and removes
+every version. Do not send a `surface` field: an API key cannot choose a
+surface, and the call returns **400** `Forbidden field`.
+
+### Source endpoints
+
+A source indexes the files of a drive. With an API key, only
+`store: "draganddrop"` works. Creating one is a 5-step flow, like a file
+upload:
+
+1. `POST /drives` returns the drive, with its `id`.
+2. `GET /drives/{drive_pid}/upload?filename=...&mimetype=...` returns a
+   presigned `url` and `fields`. `filename` cannot contain `/`.
+3. POST the file to that `url` as `multipart/form-data`, with `fields` as form
+   fields, and read the `ETag` response header. **Do not send
+   `x-cominty-token` to this host.**
+4. `POST /drives/upload` with `{"etag": ..., "key": ...}`. The `key` comes from
+   the `fields` of step 2. The response is the file.
+5. `POST /dc/sources` with `store`, `scope`, and `config.drive_id`. The first
+   sync starts at once.
+
+```bash
+curl -X POST "https://ds.cominty.com/dc/sources" \
+  -H "x-cominty-token: $COMINTY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Product docs",
+    "store": "draganddrop",
+    "scope": "private",
+    "config": {"drive_id": "'"$DRIVE_ID"'"}
+  }'
+```
+
+The response has `status` `pending` or `syncing`. Poll `GET /dc/sources` until
+the source is `synced`, then search it.
+
+- **Two ids.** `id` is a number: capabilities and scopes take it in
+  `source_ids`. `pid` is a string: every path takes it.
+- **No single read.** There is no `GET /dc/sources/{pid}`. Read the list and
+  pick. `GET /dc/sources` includes archived sources. `archived=true` keeps only
+  those, `archived=false` hides them.
+- **Files.** `DELETE /files/{file_pid}` returns **200** with a `null` body.
+  `GET /files/{file_pid}` returns a download URL as a bare JSON string, valid
+  for 5 minutes. Fetch it without the key. After you add or delete a file, call
+  the `sync` operation.
+
+`PUT /dc/sources/{source_pid}/status?operation=...` runs one operation:
+
+| `operation` | Valid from |
+| ----------- | ---------- |
+| `start` | `paused` |
+| `pause` | A running sync, which it cancels |
+| `sync` | `synced`, `error`, `out_of_sync`, `daily_quota_reached` |
+| `archive` | Any status but `archived`. It removes the indexed documents and the files, and cannot be undone. |
+
+Any other combination returns **400** `Operation is not valid`. An unknown
+`operation` returns **422**.
+
+| Case | Result |
+| ---- | ------ |
+| `store` is `googledrive` or `sharepoint` with a `connection_id` | **400** `Store not available for API keys` |
+| `store` is `googledrive` or `sharepoint` without one | **422** |
+| `config.drive_id` is missing or unknown | **400** `Invalid config.drive_id` |
+| A drive or file created by another user | **404** `Not Found` |
+| A 101st drive for one user | **400** `Too many drives`. Drives cannot be deleted. |
+| A 51st file on a drive | **400** `Too many files` or `Too many pending files` |
+
+<Note>
+  A source created with a key is private to the key owner. A chat that searches
+  it must run with the owner's `user_id`, as the agent's `owner` shows. With
+  another `user_id`, the agent's document tool reports that it has no authorized
+  source. See [Sources](/guides/sources#chat-with-the-key-owners-user-id).
+</Note>
+
+### Document endpoint
+
+`GET /documents?id=...` resolves one document id, such as the one in a
+`<cite document_id="2292#8058" .../>` tag of an answer. The id contains a `#`,
+so URL-encode it (`2292%238058`). There is no list. An unknown id returns
+**404** `Not Found`.
+
+```bash
+curl -G "https://ds.cominty.com/documents" \
+  -H "x-cominty-token: $COMINTY_API_KEY" \
+  --data-urlencode "id=2292#8058"
+```
 
 ## Tool round cap
 

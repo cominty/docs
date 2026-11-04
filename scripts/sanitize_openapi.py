@@ -11,8 +11,9 @@ It is idempotent and safe to run repeatedly. It does the following:
 
 0. Prune to the SDK surface
    The public docs only cover the endpoints the Python SDK uses (chat, threads,
-   memory). The generator emits the full internal API (~50 paths, including
-   internal-only ones like /dc/internal/sources/readable). We drop every path
+   memory, MCP, agents, skills, sources, documents). The generator emits the
+   full internal API (~100 paths, including internal-only ones like
+   /dc/internal/sources/readable). We drop every path
    except the whitelist in KEEP_PATHS, so the public spec, and the API
    reference it generates, is limited to what the SDK exposes. KEEP_PATHS is
    the single source of truth for that surface; don't restate its size or
@@ -36,12 +37,11 @@ It is idempotent and safe to run repeatedly. It does the following:
 
 2. Inject `servers`
    The generated spec has no `servers`, so the API playground has no base URL
-   to call. We set a default and override the hosts that differ:
+   to call. We set a default and can override the hosts that differ:
        default     -> https://ds.cominty.com   (/dc/*, /chat/*, /agents, ...)
-       /mcp/*      -> https://mcp.cominty.com
-   NOTE: verify the /mcp base. With this override the full URL becomes
-   https://mcp.cominty.com/mcp/scopes. Adjust DEFAULT_SERVER / HOST_OVERRIDES
-   below if the real routing differs.
+   Every kept path lives on the default host. `GET /mcp/manifest` answers on
+   ds.cominty.com (verified in production), and mcp.cominty.com returns 404 for
+   it. HOST_OVERRIDES is empty. Add a prefix there if a path moves.
 
 3. Inject the API-key security scheme
    Auth is the `x-cominty-token` header, but the generated spec leaves
@@ -66,6 +66,16 @@ It is idempotent and safe to run repeatedly. It does the following:
    memory_namespace, source_ids, document_ids and disabled_tools are still
    accepted but replaced by capabilities and message.scope. We set
    `deprecated: true` on them (see DEPRECATED_FIELDS).
+
+7. Strip internal-only inputs
+   The generator declares an `x-internal-token` header on the skills endpoints
+   and a `surface` field on the `POST /skills` form. An API key cannot use
+   either: `surface` always returns 400 Forbidden field. Both are removed.
+
+8. Make `info` public
+   The generator puts deploy metadata (deployer, secret names) in
+   `info.description` and names the API after the repository. We replace the
+   title and the description and keep `info.version`.
 
 If the generator starts emitting other Mintlify-incompatible constructs, add
 the fix here so it stays in one place.
@@ -97,6 +107,30 @@ SPEC = pathlib.Path(__file__).resolve().parent.parent / "openapi.json"
 #   GET  /memory/file                          -> memory.get
 #   PUT  /memory/file                          -> memory.update
 #   DELETE /memory/file                        -> memory.delete
+#   GET  /mcp/manifest                         -> mcp.list
+#   GET  /agents                               -> agents.list
+#   GET  /agents/models                        -> agents.list_models
+#   GET  /agents/{agent_pid}                   -> agents.get
+#   POST /agents                               -> agents.create
+#   PUT  /agents/{agent_pid}                   -> agents.update
+#   PUT  /agents/{agent_pid}/models            -> agents.set_models
+#   DELETE /agents/{agent_pid}                 -> agents.delete
+#   GET  /skills                               -> skills.list
+#   POST /skills                               -> skills.create
+#   PUT  /skills/{skill_pid}                   -> skills.update
+#   POST /skills/{skill_pid}/versions          -> skills.upload_version
+#   DELETE /skills/{skill_pid}                 -> skills.delete
+#   POST /drives                               -> sources.create (step 1/5)
+#   GET  /drives/{drive_pid}                   -> sources.create (drive check)
+#   GET  /drives/{drive_pid}/upload            -> sources.create / add_files (step 2/5)
+#   POST /drives/upload                        -> sources.create / add_files (step 4/5)
+#   GET  /files/{file_pid}                     -> sources.download_file
+#   DELETE /files/{file_pid}                   -> sources.remove_file
+#   GET  /dc/sources                           -> sources.list / get
+#   POST /dc/sources                           -> sources.create (step 5/5)
+#   PUT  /dc/sources/{source_pid}              -> sources.update
+#   PUT  /dc/sources/{source_pid}/status       -> sources.start / pause / sync / archive
+#   GET  /documents                            -> documents.get
 # Update this set (and the table above) whenever the SDK's endpoint set changes.
 KEEP_PATHS = {
     "/chat",
@@ -110,13 +144,39 @@ KEEP_PATHS = {
     "/memory",
     "/memory/namespaces",
     "/memory/file",
+    "/mcp/manifest",
+    "/agents",
+    "/agents/models",
+    "/agents/{agent_pid}",
+    "/agents/{agent_pid}/models",
+    "/skills",
+    "/skills/{skill_pid}",
+    "/skills/{skill_pid}/versions",
+    "/drives",
+    "/drives/{drive_pid}",
+    "/drives/{drive_pid}/upload",
+    "/drives/upload",
+    "/files/{file_pid}",
+    "/dc/sources",
+    "/dc/sources/{source_pid}",
+    "/dc/sources/{source_pid}/status",
+    "/documents",
 }
 
 DEFAULT_SERVER = "https://ds.cominty.com"
-# path prefix -> server URL. Most specific match wins.
-HOST_OVERRIDES = {
-    "/mcp": "https://mcp.cominty.com",
-}
+# path prefix -> server URL. Most specific match wins. Empty: every kept path
+# lives on the default host.
+HOST_OVERRIDES = {}
+
+INFO_TITLE = "Cominty API"
+INFO_DESCRIPTION = (
+    "The HTTP API behind the Cominty Python SDK: chat and threads, memory, MCP "
+    "integrations, agents, skills, document sources, and documents. Send your "
+    "API key in the x-cominty-token header."
+)
+# Inputs the generator declares but an API key cannot use.
+INTERNAL_HEADERS = ("x-internal-token",)
+INTERNAL_FORM_FIELDS = (("Body_add_skill_skills_post", "surface"),)
 
 # Auth: an apiKey passed in the `x-cominty-token` header, required globally.
 AUTH_HEADER = "x-cominty-token"
@@ -177,6 +237,39 @@ def strip_auth_header_param(op):
     return 0
 
 
+def strip_internal_inputs(spec):
+    """Drop internal headers and form fields. Returns the count removed."""
+    removed = 0
+    for item in (spec.get("paths") or {}).values():
+        for method, op in item.items():
+            if method not in HTTP_METHODS or not isinstance(op, dict):
+                continue
+            params = op.get("parameters") or []
+            kept = [
+                p for p in params
+                if not (p.get("in") == "header" and p.get("name") in INTERNAL_HEADERS)
+            ]
+            if len(kept) != len(params):
+                removed += len(params) - len(kept)
+                op["parameters"] = kept
+    schemas = (spec.get("components") or {}).get("schemas") or {}
+    for schema_name, field_name in INTERNAL_FORM_FIELDS:
+        schema = schemas.get(schema_name) or {}
+        if field_name in (schema.get("properties") or {}):
+            del schema["properties"][field_name]
+            removed += 1
+    return removed
+
+
+def make_info_public(spec):
+    """Replace the generated title and description. Keeps info.version."""
+    info = spec.setdefault("info", {})
+    changed = info.get("title") != INFO_TITLE or info.get("description") != INFO_DESCRIPTION
+    info["title"] = INFO_TITLE
+    info["description"] = INFO_DESCRIPTION
+    return changed
+
+
 def apply_security(spec):
     """Register the apiKey scheme, require it globally, exempt public paths.
 
@@ -201,7 +294,9 @@ def apply_security(spec):
 
 HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options", "trace"}
 # Descriptions that mention these are generator notes, not public copy.
-INTERNAL_MARKERS = ("ENG-", "Portal", "SaaS", "Developer portal")
+# An em dash is also a marker: the generator's text uses them, and the docs
+# never do (see AGENTS.md), so we replace that text with our own.
+INTERNAL_MARKERS = ("ENG-", "Portal", "SaaS", "Developer portal", "\u2014")
 
 # Page title and description for each operation we publish. Summaries are
 # sentence case because Mintlify uses them as the endpoint page heading.
@@ -363,6 +458,237 @@ OPERATION_COPY = {
             "gone returns 404."
         ),
     },
+    ("get", "/mcp/manifest"): {
+        "summary": "List MCP servers",
+        "description": (
+            "List the MCP integrations this API key can use. A server's name "
+            "is the value to store in capabilities.mcp.connections. Servers "
+            "that are off are listed with is_enabled false."
+        ),
+    },
+    ("get", "/agents"): {
+        "summary": "List agents",
+        "description": (
+            "List the built-in agents, the organization agents, and the "
+            "private agents of the user who created the key. A private agent "
+            "of another member is not listed. Items are summaries: they carry "
+            "no instructions and no models. Call GET /agents/{agent_pid} for "
+            "the full agent."
+        ),
+    },
+    ("get", "/agents/models"): {
+        "summary": "List models",
+        "description": (
+            "List the models you can put in an agent's model chain. Each item "
+            "has an id and a name. Pass the ids to model_ids on POST /agents "
+            "or PUT /agents/{agent_pid}/models."
+        ),
+    },
+    ("get", "/agents/{agent_pid}"): {
+        "summary": "Get an agent",
+        "description": (
+            "Fetch one agent with its instructions and model chain. An "
+            "unknown id, an agent of another organization, and a private agent "
+            "of another member all return 404 Not Found."
+        ),
+    },
+    ("post", "/agents"): {
+        "summary": "Create an agent",
+        "description": (
+            "Create a custom agent. The user who created the API key owns it: "
+            "owner is that user's id, not the key's. scope is private (the "
+            "owner only) or organization (every member). Omit model_ids to "
+            "use the organization's default model chain. A capability you "
+            "omit gets its default. capabilities.mcp.connections takes the "
+            "name values of GET /mcp/manifest, and capabilities.skills.include "
+            "takes skill ids (an id the key cannot read returns 422). Legacy "
+            "fields are deprecated: use capabilities instead."
+        ),
+    },
+    ("put", "/agents/{agent_pid}"): {
+        "summary": "Update an agent",
+        "description": (
+            "Update an agent. Send only the fields you want to change. A JSON "
+            "null clears description, instructions and capabilities. "
+            "capabilities is merged capability by capability: each one you "
+            "send replaces the stored one, the others stay. A built-in agent, "
+            "an agent of another organization, and a private agent of another "
+            "member return 404 Not Found. An organization agent owned by "
+            "someone else can be updated."
+        ),
+    },
+    ("put", "/agents/{agent_pid}/models"): {
+        "summary": "Set the model chain",
+        "description": (
+            "Replace the agent's model chain. The first model answers, and the "
+            "next ones take over when it fails. An unknown id returns 404 Bad "
+            "model_ids. An empty list returns 422. On a built-in agent this "
+            "changes the chain of the whole organization for that agent."
+        ),
+    },
+    ("delete", "/agents/{agent_pid}"): {
+        "summary": "Delete an agent",
+        "description": (
+            "Delete an agent permanently. Success is 204 with no body. "
+            "Messages the agent already handled keep working. Deleting twice, "
+            "or deleting a built-in agent, returns 404."
+        ),
+    },
+    ("get", "/skills"): {
+        "summary": "List skills",
+        "description": (
+            "List the built-in Cominty skills (source cominty, scope null, "
+            "read-only), the organization skills, and the skills of the user "
+            "who created the key. A private skill of another member is not "
+            "listed."
+        ),
+    },
+    ("post", "/skills"): {
+        "summary": "Create a skill",
+        "description": (
+            "Create a custom skill from a zip archive of at most 30 MB, sent "
+            "as multipart/form-data with display_name (1 to 100 characters), "
+            "scope and file. SKILL.md opens with YAML frontmatter that follows "
+            "https://agentskills.io/specification. The zip has SKILL.md at its "
+            "root, or one top-level folder that holds SKILL.md and nothing "
+            "else at the root. Any other layout returns 422 with a detail that "
+            "starts with Invalid zip structure. A bad frontmatter returns 422 "
+            "with the reason. Success is 201."
+        ),
+    },
+    ("put", "/skills/{skill_pid}"): {
+        "summary": "Update a skill",
+        "description": (
+            "Rename a skill, turn it on or off, or change its scope. Send only "
+            "the fields you want to change. An inactive skill is kept, but "
+            "agents stop using it. A built-in skill and a skill the key owner "
+            "does not own return 404 Not Found."
+        ),
+    },
+    ("post", "/skills/{skill_pid}/versions"): {
+        "summary": "Upload a skill version",
+        "description": (
+            "Upload a new zip for a skill (same layouts as POST /skills). The "
+            "new version becomes the default, and frontmatter and updated_at "
+            "describe it. Versions are tagged to the second: two uploads of the "
+            "same skill within one second collide and return 500, so space "
+            "them out. Success is 201."
+        ),
+    },
+    ("delete", "/skills/{skill_pid}"): {
+        "summary": "Delete a skill",
+        "description": (
+            "Delete a skill and every version of it, permanently. Success is "
+            "200 with a null body. A built-in skill, a skill the key owner "
+            "does not own, and a second delete return 404."
+        ),
+    },
+    ("post", "/drives"): {
+        "summary": "Create a drive",
+        "description": (
+            "Create an empty drive: the container that holds the files of a "
+            "source. The drive belongs to the user who created the key. A user "
+            "has at most 100 drives, and a drive cannot be deleted. The 101st "
+            "returns 400 Too many drives."
+        ),
+    },
+    ("get", "/drives/{drive_pid}"): {
+        "summary": "Get a drive",
+        "description": (
+            "Fetch a drive and its files. A drive created by another user "
+            "returns 404 Not Found, even in the same organization."
+        ),
+    },
+    ("get", "/drives/{drive_pid}/upload"): {
+        "summary": "Get a drive upload permission",
+        "description": (
+            "First step of a file upload to a drive. Returns a presigned url "
+            "and form fields. Upload the file to that url, a storage host, as "
+            "multipart/form-data with the fields. Do not send x-cominty-token "
+            "to the storage host. filename cannot contain a slash. A drive "
+            "holds at most 50 files: past that, the call returns 400 Too many "
+            "files, or Too many pending files."
+        ),
+    },
+    ("post", "/drives/upload"): {
+        "summary": "Confirm a drive upload",
+        "description": (
+            "Last step of a file upload to a drive. Send the ETag from the "
+            "storage response and the key from the upload permission. The "
+            "response is the file. Its id is what GET /files/{file_pid} and "
+            "DELETE /files/{file_pid} take."
+        ),
+    },
+    ("get", "/files/{file_pid}"): {
+        "summary": "Get a file download URL",
+        "description": (
+            "Returns a presigned download URL as a JSON string, not the file "
+            "bytes. The URL expires after 5 minutes: fetch it right away, and "
+            "do not send x-cominty-token to the storage host. A file created "
+            "by another user returns 404 Not Found."
+        ),
+    },
+    ("delete", "/files/{file_pid}"): {
+        "summary": "Delete a file",
+        "description": (
+            "Delete a file from its drive, with its stored object. Success is "
+            "200 with a null body. The source that indexes the drive does not "
+            "re-read it until you request a sync with PUT "
+            "/dc/sources/{source_pid}/status."
+        ),
+    },
+    ("get", "/dc/sources"): {
+        "summary": "List sources",
+        "description": (
+            "List the sources created by the key's user, plus the "
+            "organization-scoped sources. Archived sources are included. Pass "
+            "archived to keep only the archived ones (true) or to hide them "
+            "(false). A source has two ids: id is a number, the one "
+            "capabilities take in source_ids. pid is a string, the one every "
+            "path takes."
+        ),
+    },
+    ("post", "/dc/sources"): {
+        "summary": "Create a source",
+        "description": (
+            "Index the files of a drive as a source. With an API key, store "
+            "must be draganddrop and config.drive_id is the id of a drive you "
+            "created. The first sync starts at once: the response has status "
+            "pending or syncing. Poll GET /dc/sources until the status is "
+            "synced before you search it. googledrive and sharepoint need the "
+            "console's OAuth flow and return 400 Store not available for API "
+            "keys. A missing or unknown drive returns 400 Invalid "
+            "config.drive_id. The source is private to the key's user."
+        ),
+    },
+    ("put", "/dc/sources/{source_pid}"): {
+        "summary": "Rename a source",
+        "description": (
+            "Rename a source. The drive of a drag-and-drop source cannot "
+            "change."
+        ),
+    },
+    ("put", "/dc/sources/{source_pid}/status"): {
+        "summary": "Change a source status",
+        "description": (
+            "Run an operation on a source: start (only from paused), pause "
+            "(cancels a running sync), sync (from synced, error, out_of_sync "
+            "or daily_quota_reached) and archive (from any status but "
+            "archived). Archiving removes the indexed documents and the "
+            "files, and cannot be undone. An operation that does not match "
+            "the current status returns 400 Operation is not valid."
+        ),
+    },
+    ("get", "/documents"): {
+        "summary": "Get a document",
+        "description": (
+            "Resolve a document id, such as the one in a <cite "
+            "document_id=\"...\"/> tag of an answer, to its source and file. "
+            "The id is the source id, a #, and the document's own identifier, "
+            "so URL-encode it. There is no list: an unknown id returns 404 "
+            "Not Found."
+        ),
+    },
 }
 
 PARAM_COPY = {
@@ -450,6 +776,48 @@ PARAM_COPY = {
     ),
     ("delete", "/memory/file", "user_id"): (
         "Optional. Does not select the memory namespace."
+    ),
+    ("get", "/agents/{agent_pid}", "agent_pid"): "Identifier of the agent.",
+    ("put", "/agents/{agent_pid}", "agent_pid"): "Identifier of the agent.",
+    ("put", "/agents/{agent_pid}/models", "agent_pid"): (
+        "Identifier of the agent."
+    ),
+    ("delete", "/agents/{agent_pid}", "agent_pid"): "Identifier of the agent.",
+    ("put", "/skills/{skill_pid}", "skill_pid"): "Identifier of the skill.",
+    ("post", "/skills/{skill_pid}/versions", "skill_pid"): (
+        "Identifier of the skill."
+    ),
+    ("delete", "/skills/{skill_pid}", "skill_pid"): "Identifier of the skill.",
+    ("get", "/drives/{drive_pid}", "drive_pid"): "Identifier of the drive.",
+    ("get", "/drives/{drive_pid}/upload", "drive_pid"): (
+        "Identifier of the drive that receives the file."
+    ),
+    ("get", "/drives/{drive_pid}/upload", "filename"): (
+        "File name. It cannot contain a slash."
+    ),
+    ("get", "/drives/{drive_pid}/upload", "mimetype"): "Media type of the file.",
+    ("get", "/files/{file_pid}", "file_pid"): "Identifier of the file.",
+    ("delete", "/files/{file_pid}", "file_pid"): "Identifier of the file.",
+    ("get", "/dc/sources", "archived"): (
+        "true keeps only the archived sources, false hides them. Omit it to "
+        "list both."
+    ),
+    ("get", "/dc/sources", "disconnected"): (
+        "Filter on sources whose connection is lost. A drag-and-drop source "
+        "has no connection, so it is never disconnected."
+    ),
+    ("put", "/dc/sources/{source_pid}", "source_pid"): (
+        "Public id of the source (the pid field, a string)."
+    ),
+    ("put", "/dc/sources/{source_pid}/status", "source_pid"): (
+        "Public id of the source (the pid field, a string)."
+    ),
+    ("put", "/dc/sources/{source_pid}/status", "operation"): (
+        "start, pause, sync or archive. Each one is valid from some statuses "
+        "only."
+    ),
+    ("get", "/documents", "id"): (
+        "Document id, for example 2292#8058. It contains a #, so URL-encode it."
     ),
 }
 
@@ -606,6 +974,154 @@ FIELD_COPY = {
         "Narrows the thread's connections for this message. Must be a subset "
         "of them. \"*\" keeps the thread allowlist."
     ),
+    ("AgentIn", "name"): "Display name of the agent.",
+    ("AgentIn", "description"): "Short description. At most 500 characters.",
+    ("AgentIn", "instructions"): (
+        "Added to the agent's system prompt. At most 30000 characters."
+    ),
+    ("AgentIn", "scope"): (
+        "private: only the owner sees the agent. organization: every member "
+        "does. Defaults to private."
+    ),
+    ("AgentIn", "capabilities"): (
+        "What the agent can use. A capability you omit gets its default. "
+        "capabilities.memory sets the agent's memory namespace."
+    ),
+    ("AgentIn", "allow_execution_options_override"): (
+        "Leave it false. Legacy, tied to execution_options."
+    ),
+    ("AgentIn", "model_ids"): (
+        "Model chain, in failover order, from GET /agents/models. At least one "
+        "id. Omit it to use the organization's default chain."
+    ),
+    ("AgentIn", "execution_options"): (
+        "Deprecated. Use capabilities instead."
+    ),
+    ("AgentIn", "memory_namespace"): (
+        "Deprecated. Use capabilities.memory instead."
+    ),
+    ("AgentUpdate", "name"): "New name. Omit it to leave the name unchanged.",
+    ("AgentUpdate", "description"): (
+        "New description, at most 500 characters. null clears it."
+    ),
+    ("AgentUpdate", "instructions"): (
+        "New instructions, at most 30000 characters. null clears them."
+    ),
+    ("AgentUpdate", "scope"): "private or organization.",
+    ("AgentUpdate", "capabilities"): (
+        "Merged capability by capability: each one you send replaces the "
+        "stored one, the others stay. null clears them all."
+    ),
+    ("AgentUpdate", "allow_execution_options_override"): (
+        "Legacy, tied to execution_options."
+    ),
+    ("AgentUpdate", "execution_options"): (
+        "Deprecated. Use capabilities instead."
+    ),
+    ("AgentUpdate", "memory_namespace"): (
+        "Deprecated. Use capabilities.memory instead."
+    ),
+    ("AgentModelsIn", "model_ids"): (
+        "The new chain, in failover order. At least one id, from "
+        "GET /agents/models."
+    ),
+    ("Body_add_skill_skills_post", "display_name"): (
+        "Name shown in lists. 1 to 100 characters."
+    ),
+    ("Body_add_skill_skills_post", "file"): (
+        "Zip archive of at most 30 MB. SKILL.md at the root, or inside one "
+        "top-level folder."
+    ),
+    ("Body_add_skill_skills_post", "scope"): (
+        "private (the key's user only) or organization. Defaults to private."
+    ),
+    ("Body_add_skill_version_skills__skill_pid__versions_post", "file"): (
+        "Zip archive of at most 30 MB, with the same layouts as POST /skills."
+    ),
+    ("SkillUpdate", "display_name"): "New name. 1 to 100 characters.",
+    ("SkillUpdate", "active"): (
+        "false keeps the skill but agents stop using it."
+    ),
+    ("SkillUpdate", "scope"): "private or organization.",
+    ("SkillOut", "scope"): "null for a built-in skill.",
+    ("SkillOut", "source"): (
+        "cominty for a built-in, read-only skill. custom for one you uploaded."
+    ),
+    ("SkillOut", "updated_at"): "When the default version was uploaded.",
+    ("DriveOut", "id"): "Identifier of the drive. Use it as config.drive_id.",
+    ("UploadPermission", "url"): (
+        "Storage URL to POST the file to. Do not send x-cominty-token there."
+    ),
+    ("UploadPermission", "fields"): (
+        "Form fields to send with the file to the storage URL."
+    ),
+    ("AssetUploadConfirmation", "etag"): "ETag returned by the storage upload.",
+    ("AssetUploadConfirmation", "key"): (
+        "key field from the upload permission's fields."
+    ),
+    ("FileOut", "id"): "Identifier of the file.",
+    ("ConnectionLessSourceIn", "name"): (
+        "Name of the source. Omit it for a generated name."
+    ),
+    ("ConnectionLessSourceIn", "store"): (
+        "Must be draganddrop with an API key."
+    ),
+    ("ConnectionLessSourceIn", "config"): (
+        "Send drive_id: the id of a drive you created with POST /drives."
+    ),
+    ("ConnectionLessSourceIn", "scope"): (
+        "private (the key's user only) or organization."
+    ),
+    ("SourceWithConnectionIn", "store"): (
+        "Not available with an API key: it returns 400 Store not available "
+        "for API keys."
+    ),
+    ("SourceUpdate", "name"): "New name of the source.",
+    ("SourceUpdate", "connection_id"): (
+        "Not used with a drag-and-drop source."
+    ),
+    ("SourceUpdate", "config"): (
+        "Not used with a drag-and-drop source: its drive cannot change."
+    ),
+    ("SourceOut", "id"): (
+        "Numeric id. Use it in source_ids on a capability or a scope."
+    ),
+    ("SourceOut", "pid"): "Public id. Use it in every path.",
+    ("SourceOut", "status"): (
+        "pending, syncing, synced, error, out_of_sync, cancelling, pausing, "
+        "paused, archived, disconnected, inoperative_connection, "
+        "expired_connection, invalid_configuration or daily_quota_reached."
+    ),
+    ("SourceOut", "store"): (
+        "draganddrop, googledrive or sharepoint. A key creates only "
+        "draganddrop."
+    ),
+    ("DocumentMetadataOut", "document_id"): (
+        "Source id, a #, and the document's own identifier."
+    ),
+    ("DocumentMetadataOut", "source_id"): (
+        "Numeric id of the source. Use it in source_ids."
+    ),
+    ("DocumentMetadataOut", "source_pid"): (
+        "Public id of the source. Use it in paths."
+    ),
+    ("DocumentMetadataOut", "document_uri"): (
+        "Link to the document. null when there is none. For a drag-and-drop "
+        "source it ends with the file id."
+    ),
+    ("Server", "name"): (
+        "Stable integration id. Store it in capabilities.mcp.connections."
+    ),
+    ("Server", "is_enabled"): "true when the integration is turned on.",
+    ("Server", "origin"): "builtin or remote today. Other values may appear.",
+    ("Server", "scope"): "organization or user today.",
+    ("Server", "requires_oauth_connect"): (
+        "true when someone must connect the integration with OAuth in the "
+        "console first."
+    ),
+    ("Server", "connection_status"): (
+        "For example connected. Omitted when unknown."
+    ),
 }
 
 # Legacy request fields, replaced by capabilities and message.scope. They are
@@ -615,6 +1131,10 @@ DEPRECATED_FIELDS = (
     ("HumanMessage", "source_ids"),
     ("HumanMessage", "document_ids"),
     ("HumanMessage", "disabled_tools"),
+    ("AgentIn", "memory_namespace"),
+    ("AgentIn", "execution_options"),
+    ("AgentUpdate", "memory_namespace"),
+    ("AgentUpdate", "execution_options"),
 )
 
 
@@ -765,8 +1285,10 @@ def main():
             overridden.append(path)
 
     removed, public = apply_security(spec)
+    internal_removed = strip_internal_inputs(spec)
     filled, unknown = enrich_copy(spec)
     deprecated = mark_deprecated(spec)
+    info_changed = make_info_public(spec)
 
     SPEC.write_text(json.dumps(spec, indent=2) + "\n")
 
@@ -781,6 +1303,8 @@ def main():
     print(f"  public exemptions    : {public} -> {sorted(PUBLIC_PATHS)}")
     print(f"  duplicate header rm  : {removed}")
     print(f"  ops without token    : {dropped_ops or '(none)'}")
+    print(f"  internal inputs rm   : {internal_removed}")
+    print(f"  info made public     : {info_changed}")
     print(f"  descriptions filled  : {filled}")
     print(f"  fields deprecated    : {deprecated}")
     print(f"  ops missing copy     : {unknown or '(none)'}")

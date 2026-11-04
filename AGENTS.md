@@ -65,7 +65,8 @@ This is idempotent and does the following:
    `KEEP_PATHS`. That file is the single source of truth for which paths are
    public and how many there are. Don't hardcode a count or path list anywhere
    else. It drifts every time the SDK gains a resource, as it just did with
-   the memory endpoints. The generator emits the full internal API (~50 paths),
+   the memory endpoints and again with the API-key endpoints (agents, skills,
+   sources, MCP manifest). The generator emits the full internal API (~50 paths),
    so this is what keeps the public spec, and the
    auto-generated API reference, limited to the SDK. Update `KEEP_PATHS` if
    the SDK's endpoint set changes. Unused component schemas are intentionally
@@ -88,18 +89,27 @@ This is idempotent and does the following:
 
 2. **`servers` injection.** The raw spec has no `servers`, so the API playground
    has no base URL. The script sets:
-   - default → `https://ds.cominty.com` (covers `/dc/*`, `/chat/*`, `/agents`, …)
-   - `/mcp/*` → `https://mcp.cominty.com`
+   - default → `https://ds.cominty.com` (covers `/dc/*`, `/chat/*`, `/agents`,
+     `/skills`, `/drives`, `/mcp/manifest`, …)
 
-   Adjust `DEFAULT_SERVER` / `HOST_OVERRIDES` in the script if routing changes.
-   (Unverified: with the `/mcp` override the full URL is
-   `https://mcp.cominty.com/mcp/scopes`. Confirm the real base.)
+   `HOST_OVERRIDES` is empty: `GET /mcp/manifest` is served by the same host as
+   the rest (verified in production). Adjust `DEFAULT_SERVER` /
+   `HOST_OVERRIDES` in the script if routing changes.
+
+3. **Keeps internal inputs and metadata out.** The script removes the
+   `x-internal-token` header parameter and the `surface` form field of
+   `POST /skills` (the key's surface is implied). It rewrites `info` (title
+   `Cominty API`, a short public description, the version is kept) and checks
+   that no AWS deploy metadata or em dash is left. Extend `INTERNAL_HEADERS`,
+   `INTERNAL_FORM_FIELDS`, or `INTERNAL_MARKERS` if the generator leaks more.
 
 ## API reference
 
 The **API Reference** tab uses a group with `"openapi": "/openapi.json"` plus an
 explicit page list: an intro page (`api-reference.mdx`) followed by nested groups
-(Threads, Messages, Files, Memory). Each group lists its endpoints as
+(Threads, Messages, Files, Memory, MCP, Agents, Skills, Sources, Documents).
+Sources also holds the drive and file endpoints of the upload flow. Each group
+lists its endpoints as
 `"POST /chat"`, `"GET /chat/{thread_id}"`, etc. (the order shown in the
 sidebar). Put a new endpoint in the group that matches its resource. The intro page gives `/api-reference` a stable landing URL that
 other pages link to; the endpoint pages are still auto-generated from the spec.
@@ -110,7 +120,8 @@ If `KEEP_PATHS` changes, update this list to match.
 Each concept has one home. Do not duplicate it across tabs.
 
 - **Guides** (`index`, `quickstart`, `guides/*`): concepts that apply to both
- the SDK and the API (capabilities, memory namespaces, `max_steps`). This is the single
+ the SDK and the API (capabilities, memory namespaces, `max_steps`, and the
+ **Build with code** group: custom agents, skills, sources). This is the single
   source of truth for behavior. Show both surfaces with `<Tabs>` (Python SDK
   and HTTP).
 - **MCP** (`mcp/*`): how to connect external tools. `mcp/overview` and
@@ -142,10 +153,17 @@ there directly whenever the SDK gains or changes public resources.
   `openapi.json`, and MDX).
 - `mint broken-links`: internal + external link check.
 - `python scripts/check_snippets.py`: every ` ```python ` fence across the
-  docs must parse (dedented, with top-level `await` allowed, since snippets
-  are fragments meant to run inside an `async def`). Bare signature blocks
-  like `AsyncCominty(*, user_id=None, ...)` are re-checked as a `def`. `*,`
-  is only valid there, not in a call.
+ docs must parse (dedented, with top-level `await` allowed, since snippets
+ are fragments meant to run inside an `async def`). Bare signature blocks
+ like `AsyncCominty(*, user_id=None, ...)` are re-checked as a `def`. `*,`
+ is only valid there, not in a call.
+- `python scripts/check_images.py`: image size and no Git LFS (see **Images**).
+
+The same checks run before each commit through
+[pre-commit](https://pre-commit.com) (`.pre-commit-config.yaml`, local hooks
+only). Install it once with `uv tool install pre-commit`, then run
+`pre-commit install`. The `optimize-images` hook shrinks an image that is too
+big and stops the commit, so you stage the smaller file and commit again.
 
 ## Memory API behavior not covered by the OpenAPI spec
 
@@ -167,8 +185,9 @@ are easy to get wrong, so they're called out explicitly in `api-reference.mdx`,
  follow-up `POST /chat/{thread_id}` does not accept it. If neither the start
  request nor the agent already has a namespace, the thread runs without memory
  tools. `options.memory_namespace` still works on HTTP but is deprecated, and
- cannot be sent with `options.capabilities`. Do not document `/agents` in the
- public spec. Agents are configured on the platform, **Agents** page.
+ cannot be sent with `options.capabilities`. Agents are now documented
+ (`/agents*`, see "API key behavior" below). Do not document the legacy
+ `execution_options` and `memory_namespace` fields of an agent: use `capabilities`.
 - `PUT /memory/file` can't clear a field: sending `content: null` or
   `purpose: null` returns 200 but leaves the existing value untouched (the
   `version` doesn't change either) instead of clearing it. The SDK rejects an
@@ -270,6 +289,41 @@ documented in `sdk/quickstart` (tasks), `sdk/reference` (signatures, errors) and
   (`InvalidParams`). Download is not scoped to `user_id`.
 - Links to `examples/12_*`, `13_*`, `14_*` point to `main`.
 
+## API key behavior not covered by the OpenAPI spec (SDK 1.2.0)
+
+The pages are `guides/custom-agents`, `guides/skills`, `guides/sources`,
+`mcp/overview` (list integrations), `sdk/quickstart`, `sdk/reference` and
+`api-reference` (section **Configure with an API key**). Facts verified against
+production (the draft guides were wrong on some of them):
+
+- The key acts as an admin of its organization. What it creates is owned by the
+  user who created the key (the key owner, `agent.owner`). Another member's
+  private agents, skills, and drives are absent from lists, and a read by id
+  returns 404. The key is scoped to its surface: a Platform key does not see
+  Portal agents.
+- Built-in agents (`managed: true`) cannot be updated or deleted (404), but
+  `set_models` changes the model chain of the whole organization for that agent.
+- `PUT /agents/{id}` is partial. `null` clears `description`, `instructions`, and
+  `capabilities`. `capabilities` merge capability by capability. The SDK rejects
+  an explicit `None` for `name`, `scope`, and `allow_execution_options_override`.
+- A custom skill is a zip with `SKILL.md` at its root, or a single top-level
+  folder. A wrong layout returns 422 `Invalid zip structure.`. Two uploads of a
+  skill within one second return 500. The limit is 30 MB.
+- A source created with a key is private to the key owner. A chat over it must
+  run with `user_id` set to that owner (`agent.owner`). With another `user_id`,
+  the agent finds no authorized source and says so.
+- `pid` (string) goes to the `/dc/sources` paths and to every SDK method.
+  `id` (integer) goes to `source_ids`. Do not mix them.
+- The upload flow is five calls: `POST /drives`, `GET /drives/{pid}/upload`, the
+  upload to storage, `POST /drives/upload`, then `POST /dc/sources`. Limits:
+  100 drives per user (a drive cannot be deleted, so tests use up the quota),
+  50 files per source, presigned URLs valid 5 minutes.
+- `archive` is terminal. The source stays listed with `status: archived`.
+- No call lists documents. A document id comes from a `<cite document_id="..."/>`
+  tag. `GET /documents` resolves it (the SDK URL-encodes the `#`).
+- `GET /mcp/manifest` returns every server. The SDK filters on `is_enabled`
+  (`enabled=True` by default).
+
 ## One message at a time
 
 A thread processes one message at a time. A message stays `pending` until its
@@ -294,7 +348,18 @@ Follow [Mintlify's image guide](https://www.mintlify.com/docs/create/image-embed
   `className="hidden dark:block"` for the dark one.
 - GIFs, SVGs and externally hosted images are served as is, so compress them
   first. Mintlify optimizes PNG and JPEG itself.
-- Image files are stored with Git LFS (see `.gitattributes`).
+- Never store images with Git LFS. Mintlify resolves LFS only on an Enterprise
+  plan. Without it, the site publishes the 131-byte pointer file instead of the
+  image, and every image breaks in production while it still works locally
+  (your checkout holds the real file). Commit images as regular files. There
+  is no `.gitattributes` for images.
+- An image is at most 2000 x 2000 px. A larger one only makes the repo heavier,
+  since Mintlify never serves more than 2500 px. Run
+  `uv run scripts/optimize_images.py` to shrink it (lossless compression, the
+  aspect ratio is kept).
+- `scripts/check_images.py` fails on a file of 20 MB or more, an image over
+  2000 px, an LFS rule in `.gitattributes`, and an LFS pointer file. It runs as
+  a pre-commit hook and in CI.
 
 Two validated illustrations are in `images/capabilities/` (activation modes and
 find your source id, each with a `-light` and a `-dark` file). The other pages
@@ -307,8 +372,9 @@ before its quality is validated.
 
 This repo is public, so anything in it ships publicly. Currently unresolved:
 
-- `info.title` is `"cominty/cominty"` and `info.description` contains internal
-  deploy metadata (`DEPLOYED_BY`, version tags). Both render on the public API page.
+- ~~`info.title` is `"cominty/cominty"` and `info.description` contains internal
+  deploy metadata~~. Resolved: the sanitize script rewrites `info`. Do not commit
+  `draft/openapi.json`: it still holds the raw metadata.
 - ~~`GET /dc/internal/sources/readable` is exposed in the public spec~~.
   Resolved: the sanitize script now prunes the spec to `KEEP_PATHS` (the SDK
   surface), so all internal/non-SDK paths are dropped before publish.

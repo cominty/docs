@@ -1,11 +1,892 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "cominty/cominty",
-    "description": "\n### Cominty Meta:\n\n```json\n{\n  \"VERSION_TAG\": \"main.7b78f8e\",\n  \"VERSION_AT\": \"2026-10-15T18:17:32+02:00\",\n  \"DEPLOYED_BY\": \"github-actions::jgourinda-cominty\",\n  \"DEPLOYED_AT\": \"2026-10-16T09:24:22Z\",\n  \"AWS_SECRET_NAME\": \"cominty-monorepo-production-python-api\",\n  \"AWS_SECRET_VERSION\": \"0ced4c2d-272e-47b6-91f1-ce0031637157\",\n  \"AWS_SECRET_REGION\": \"eu-west-3\"\n}\n```\n",
-    "version": "main.7b78f8e"
+    "title": "Cominty API",
+    "description": "The HTTP API behind the Cominty Python SDK: chat and threads, memory, MCP integrations, agents, skills, document sources, and documents. Send your API key in the x-cominty-token header.",
+    "version": "main.5359267"
   },
   "paths": {
+    "/dc/sources": {
+      "get": {
+        "tags": [
+          "document_stores",
+          "sources"
+        ],
+        "summary": "List sources",
+        "operationId": "get_sources_dc_sources_get",
+        "parameters": [
+          {
+            "name": "disconnected",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Disconnected"
+            },
+            "description": "Filter on sources whose connection is lost. A drag-and-drop source has no connection, so it is never disconnected."
+          },
+          {
+            "name": "archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Archived"
+            },
+            "description": "true keeps only the archived sources, false hides them. Omit it to list both."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SourceOut"
+                  },
+                  "title": "Response Get Sources Dc Sources Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List the sources created by the key's user, plus the organization-scoped sources. Archived sources are included. Pass archived to keep only the archived ones (true) or to hide them (false). A source has two ids: id is a number, the one capabilities take in source_ids. pid is a string, the one every path takes."
+      },
+      "post": {
+        "tags": [
+          "document_stores",
+          "sources"
+        ],
+        "summary": "Create a source",
+        "operationId": "add_source_dc_sources_post",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Index the files of a drive as a source. With an API key, store must be draganddrop and config.drive_id is the id of a drive you created. The first sync starts at once: the response has status pending or syncing. Poll GET /dc/sources until the status is synced before you search it. googledrive and sharepoint need the console's OAuth flow and return 400 Store not available for API keys. A missing or unknown drive returns 400 Invalid config.drive_id. The source is private to the key's user."
+      }
+    },
+    "/dc/sources/{source_pid}": {
+      "put": {
+        "tags": [
+          "document_stores",
+          "sources"
+        ],
+        "summary": "Rename a source",
+        "operationId": "update_source_dc_sources__source_pid__put",
+        "parameters": [
+          {
+            "name": "source_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Pid"
+            },
+            "description": "Public id of the source (the pid field, a string)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Rename a source. The drive of a drag-and-drop source cannot change."
+      }
+    },
+    "/dc/sources/{source_pid}/status": {
+      "put": {
+        "tags": [
+          "document_stores",
+          "sources"
+        ],
+        "summary": "Change a source status",
+        "operationId": "manage_source_dc_sources__source_pid__status_put",
+        "parameters": [
+          {
+            "name": "source_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Pid"
+            },
+            "description": "Public id of the source (the pid field, a string)."
+          },
+          {
+            "name": "operation",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "start",
+                "pause",
+                "archive",
+                "sync"
+              ],
+              "type": "string",
+              "title": "Operation"
+            },
+            "description": "start, pause, sync or archive. Each one is valid from some statuses only."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Run an operation on a source: start (only from paused), pause (cancels a running sync), sync (from synced, error, out_of_sync or daily_quota_reached) and archive (from any status but archived). Archiving removes the indexed documents and the files, and cannot be undone. An operation that does not match the current status returns 400 Operation is not valid."
+      }
+    },
+    "/documents": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Get a document",
+        "operationId": "get_document_metadata_by_query_documents_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Composite document id stored in DynamoDB (may contain `#`).",
+              "title": "Id"
+            },
+            "description": "Composite document id stored in DynamoDB (may contain `#`)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentMetadataOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Resolve a document id, such as the one in a <cite document_id=\"...\"/> tag of an answer, to its source and file. The id is the source id, a #, and the document's own identifier, so URL-encode it. There is no list: an unknown id returns 404 Not Found."
+      }
+    },
+    "/drives/{drive_pid}": {
+      "get": {
+        "tags": [
+          "drives"
+        ],
+        "summary": "Get a drive",
+        "operationId": "get_drive_drives__drive_pid__get",
+        "parameters": [
+          {
+            "name": "drive_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Drive Pid"
+            },
+            "description": "Identifier of the drive."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriveOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Fetch a drive and its files. A drive created by another user returns 404 Not Found, even in the same organization."
+      }
+    },
+    "/drives": {
+      "post": {
+        "tags": [
+          "drives"
+        ],
+        "summary": "Create a drive",
+        "operationId": "add_drive_drives_post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriveOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Create an empty drive: the container that holds the files of a source. The drive belongs to the user who created the key. A user has at most 100 drives, and a drive cannot be deleted. The 101st returns 400 Too many drives."
+      }
+    },
+    "/drives/{drive_pid}/upload": {
+      "get": {
+        "tags": [
+          "drives"
+        ],
+        "summary": "Get a drive upload permission",
+        "operationId": "get_file_upload_permission_drives__drive_pid__upload_get",
+        "parameters": [
+          {
+            "name": "drive_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Drive Pid"
+            },
+            "description": "Identifier of the drive that receives the file."
+          },
+          {
+            "name": "mimetype",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mimetype"
+            },
+            "description": "Media type of the file."
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[^/]+$",
+              "title": "Filename"
+            },
+            "description": "File name. It cannot contain a slash."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadPermission"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "First step of a file upload to a drive. Returns a presigned url and form fields. Upload the file to that url, a storage host, as multipart/form-data with the fields. Do not send x-cominty-token to the storage host. filename cannot contain a slash. A drive holds at most 50 files: past that, the call returns 400 Too many files, or Too many pending files."
+      }
+    },
+    "/drives/upload": {
+      "post": {
+        "tags": [
+          "drives"
+        ],
+        "summary": "Confirm a drive upload",
+        "operationId": "confirm_upload_drives_upload_post",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetUploadConfirmation"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Last step of a file upload to a drive. Send the ETag from the storage response and the key from the upload permission. The response is the file. Its id is what GET /files/{file_pid} and DELETE /files/{file_pid} take."
+      }
+    },
+    "/files/{file_pid}": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Get a file download URL",
+        "operationId": "download_file_files__file_pid__get",
+        "parameters": [
+          {
+            "name": "file_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Pid"
+            },
+            "description": "Identifier of the file."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "title": "Response Download File Files  File Pid  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Returns a presigned download URL as a JSON string, not the file bytes. The URL expires after 5 minutes: fetch it right away, and do not send x-cominty-token to the storage host. A file created by another user returns 404 Not Found."
+      },
+      "delete": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Delete a file",
+        "operationId": "delete_file_files__file_pid__delete",
+        "parameters": [
+          {
+            "name": "file_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Pid"
+            },
+            "description": "Identifier of the file."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete File Files  File Pid  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete a file from its drive, with its stored object. Success is 200 with a null body. The source that indexes the drive does not re-read it until you request a sync with PUT /dc/sources/{source_pid}/status."
+      }
+    },
+    "/mcp/manifest": {
+      "get": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "List MCP servers",
+        "operationId": "get_manifest_mcp_manifest_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Manifest"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List the MCP integrations this API key can use. A server's name is the value to store in capabilities.mcp.connections. Servers that are off are listed with is_enabled false."
+      }
+    },
+    "/agents": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List agents",
+        "operationId": "get_agents_agents_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentSummaryOut"
+                  },
+                  "title": "Response Get Agents Agents Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List the built-in agents, the organization agents, and the private agents of the user who created the key. A private agent of another member is not listed. Items are summaries: they carry no instructions and no models. Call GET /agents/{agent_pid} for the full agent."
+      },
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Create an agent",
+        "operationId": "add_agent_agents_post",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/cominty__api__routers__agents__AgentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Create a custom agent. The user who created the API key owns it: owner is that user's id, not the key's. scope is private (the owner only) or organization (every member). Omit model_ids to use the organization's default model chain. A capability you omit gets its default. capabilities.mcp.connections takes the name values of GET /mcp/manifest, and capabilities.skills.include takes skill ids (an id the key cannot read returns 422). Legacy fields are deprecated: use capabilities instead."
+      }
+    },
+    "/agents/models": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List models",
+        "description": "Models selectable when building a custom agent (id and name only).",
+        "operationId": "get_available_models_agents_models_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LLMModelSummaryOut"
+                  },
+                  "title": "Response Get Available Models Agents Models Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{agent_pid}": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Get an agent",
+        "operationId": "get_agent_agents__agent_pid__get",
+        "parameters": [
+          {
+            "name": "agent_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Pid"
+            },
+            "description": "Identifier of the agent."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/cominty__api__routers__agents__AgentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Fetch one agent with its instructions and model chain. An unknown id, an agent of another organization, and a private agent of another member all return 404 Not Found."
+      },
+      "put": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Update an agent",
+        "operationId": "update_agent_agents__agent_pid__put",
+        "parameters": [
+          {
+            "name": "agent_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Pid"
+            },
+            "description": "Identifier of the agent."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/cominty__api__routers__agents__AgentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Update an agent. Send only the fields you want to change. A JSON null clears description, instructions and capabilities. capabilities is merged capability by capability: each one you send replaces the stored one, the others stay. A built-in agent, an agent of another organization, and a private agent of another member return 404 Not Found. An organization agent owned by someone else can be updated."
+      },
+      "delete": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Delete an agent",
+        "operationId": "delete_agent_agents__agent_pid__delete",
+        "parameters": [
+          {
+            "name": "agent_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Pid"
+            },
+            "description": "Identifier of the agent."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete an agent permanently. Success is 204 with no body. Messages the agent already handled keep working. Deleting twice, or deleting a built-in agent, returns 404."
+      }
+    },
+    "/agents/{agent_pid}/models": {
+      "put": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Set the model chain",
+        "operationId": "set_agent_models_agents__agent_pid__models_put",
+        "parameters": [
+          {
+            "name": "agent_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Pid"
+            },
+            "description": "Identifier of the agent."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentModelsIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/cominty__api__routers__agents__AgentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Replace the agent's model chain. The first model answers, and the next ones take over when it fails. An unknown id returns 404 Bad model_ids. An empty list returns 422. On a built-in agent this changes the chain of the whole organization for that agent."
+      }
+    },
     "/chat/files/{file_pid}": {
       "get": {
         "tags": [
@@ -1107,6 +1988,239 @@
         },
         "description": "Delete one file. With an API token, namespace is required. Success is 204 with no body. Deleting a path that is already gone returns 404."
       }
+    },
+    "/skills": {
+      "get": {
+        "tags": [
+          "agents",
+          "skills"
+        ],
+        "summary": "List skills",
+        "operationId": "get_skills_skills_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SkillOut"
+                  },
+                  "title": "Response Get Skills Skills Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List the built-in Cominty skills (source cominty, scope null, read-only), the organization skills, and the skills of the user who created the key. A private skill of another member is not listed."
+      },
+      "post": {
+        "tags": [
+          "agents",
+          "skills"
+        ],
+        "summary": "Create a skill",
+        "description": "Create a custom skill from a zip archive of at most 30 MB, sent as multipart/form-data with display_name (1 to 100 characters), scope and file. SKILL.md opens with YAML frontmatter that follows https://agentskills.io/specification. The zip has SKILL.md at its root, or one top-level folder that holds SKILL.md and nothing else at the root. Any other layout returns 422 with a detail that starts with Invalid zip structure. A bad frontmatter returns 422 with the reason. Success is 201.",
+        "operationId": "add_skill_skills_post",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_add_skill_skills_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/skills/{skill_pid}": {
+      "put": {
+        "tags": [
+          "agents",
+          "skills"
+        ],
+        "summary": "Update a skill",
+        "operationId": "update_skill_skills__skill_pid__put",
+        "parameters": [
+          {
+            "name": "skill_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Pid"
+            },
+            "description": "Identifier of the skill."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Rename a skill, turn it on or off, or change its scope. Send only the fields you want to change. An inactive skill is kept, but agents stop using it. A built-in skill and a skill the key owner does not own return 404 Not Found."
+      },
+      "delete": {
+        "tags": [
+          "agents",
+          "skills"
+        ],
+        "summary": "Delete a skill",
+        "operationId": "delete_skill_skills__skill_pid__delete",
+        "parameters": [
+          {
+            "name": "skill_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Pid"
+            },
+            "description": "Identifier of the skill."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Skill Skills  Skill Pid  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete a skill and every version of it, permanently. Success is 200 with a null body. A built-in skill, a skill the key owner does not own, and a second delete return 404."
+      }
+    },
+    "/skills/{skill_pid}/versions": {
+      "post": {
+        "tags": [
+          "agents",
+          "skills"
+        ],
+        "summary": "Upload a skill version",
+        "operationId": "add_skill_version_skills__skill_pid__versions_post",
+        "parameters": [
+          {
+            "name": "skill_pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Pid"
+            },
+            "description": "Identifier of the skill."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_add_skill_version_skills__skill_pid__versions_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Upload a new zip for a skill (same layouts as POST /skills). The new version becomes the default, and frontmatter and updated_at describe it. Versions are tagged to the second: two uploads of the same skill within one second collide and return 500, so space them out. Success is 201."
+      }
     }
   },
   "components": {
@@ -1282,7 +2396,8 @@
         "properties": {
           "name": {
             "type": "string",
-            "title": "Name"
+            "title": "Name",
+            "description": "Display name of the agent."
           },
           "description": {
             "anyOf": [
@@ -1306,11 +2421,13 @@
                 "type": "null"
               }
             ],
-            "title": "Instructions"
+            "title": "Instructions",
+            "description": "Added to the agent's system prompt. At most 30000 characters."
           },
           "scope": {
-            "$ref": "#/components/schemas/Scope-Input",
-            "default": "private"
+            "$ref": "#/components/schemas/Scope",
+            "default": "private",
+            "description": "private: only the owner sees the agent. organization: every member does. Defaults to private."
           },
           "capabilities": {
             "anyOf": [
@@ -1320,7 +2437,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "What the agent can use. A capability you omit gets its default. capabilities.memory sets the agent's memory namespace."
           },
           "execution_options": {
             "anyOf": [
@@ -1330,12 +2448,15 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Deprecated. Use capabilities instead.",
+            "deprecated": true
           },
           "allow_execution_options_override": {
             "type": "boolean",
             "title": "Allow Execution Options Override",
-            "default": false
+            "default": false,
+            "description": "Leave it false. Legacy, tied to execution_options."
           },
           "model_ids": {
             "anyOf": [
@@ -1350,7 +2471,8 @@
                 "type": "null"
               }
             ],
-            "title": "Model Ids"
+            "title": "Model Ids",
+            "description": "Model chain, in failover order, from GET /agents/models. At least one id. Omit it to use the organization's default chain."
           },
           "memory_namespace": {
             "anyOf": [
@@ -1363,7 +2485,9 @@
                 "type": "null"
               }
             ],
-            "title": "Memory Namespace"
+            "title": "Memory Namespace",
+            "description": "Deprecated. Use capabilities.memory instead.",
+            "deprecated": true
           }
         },
         "additionalProperties": false,
@@ -1381,7 +2505,8 @@
             },
             "type": "array",
             "minItems": 1,
-            "title": "Model Ids"
+            "title": "Model Ids",
+            "description": "The new chain, in failover order. At least one id, from GET /agents/models."
           }
         },
         "additionalProperties": false,
@@ -1484,7 +2609,8 @@
                 "type": "null"
               }
             ],
-            "title": "Name"
+            "title": "Name",
+            "description": "New name. Omit it to leave the name unchanged."
           },
           "description": {
             "anyOf": [
@@ -1508,17 +2634,19 @@
                 "type": "null"
               }
             ],
-            "title": "Instructions"
+            "title": "Instructions",
+            "description": "New instructions, at most 30000 characters. null clears them."
           },
           "scope": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Scope-Input"
+                "$ref": "#/components/schemas/Scope"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "private or organization."
           },
           "capabilities": {
             "anyOf": [
@@ -1528,7 +2656,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Merged capability by capability: each one you send replaces the stored one, the others stay. null clears them all."
           },
           "execution_options": {
             "anyOf": [
@@ -1538,7 +2667,9 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Deprecated. Use capabilities instead.",
+            "deprecated": true
           },
           "allow_execution_options_override": {
             "anyOf": [
@@ -1549,7 +2680,8 @@
                 "type": "null"
               }
             ],
-            "title": "Allow Execution Options Override"
+            "title": "Allow Execution Options Override",
+            "description": "Legacy, tied to execution_options."
           },
           "memory_namespace": {
             "anyOf": [
@@ -1562,7 +2694,9 @@
                 "type": "null"
               }
             ],
-            "title": "Memory Namespace"
+            "title": "Memory Namespace",
+            "description": "Deprecated. Use capabilities.memory instead.",
+            "deprecated": true
           }
         },
         "additionalProperties": false,
@@ -1644,11 +2778,13 @@
         "properties": {
           "etag": {
             "type": "string",
-            "title": "Etag"
+            "title": "Etag",
+            "description": "ETag returned by the storage upload."
           },
           "key": {
             "type": "string",
-            "title": "Key"
+            "title": "Key",
+            "description": "key field from the upload permission's fields."
           }
         },
         "type": "object",
@@ -1677,33 +2813,26 @@
           "display_name": {
             "type": "string",
             "maxLength": 100,
-            "title": "Display Name"
+            "title": "Display Name",
+            "description": "Name shown in lists. 1 to 100 characters."
           },
           "file": {
             "type": "string",
             "contentMediaType": "application/octet-stream",
-            "title": "File"
+            "title": "File",
+            "description": "Zip archive of at most 30 MB. SKILL.md at the root, or inside one top-level folder."
           },
           "scope": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Scope-Input"
+                "$ref": "#/components/schemas/Scope"
               },
               {
                 "type": "null"
               }
             ],
-            "default": "private"
-          },
-          "surface": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ClerkSurface"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "default": "private",
+            "description": "private (the key's user only) or organization. Defaults to private."
           }
         },
         "type": "object",
@@ -1718,7 +2847,8 @@
           "file": {
             "type": "string",
             "contentMediaType": "application/octet-stream",
-            "title": "File"
+            "title": "File",
+            "description": "Zip archive of at most 30 MB, with the same layouts as POST /skills."
           }
         },
         "type": "object",
@@ -1950,18 +3080,24 @@
                 "type": "null"
               }
             ],
-            "title": "Name"
+            "title": "Name",
+            "description": "Name of the source. Omit it for a generated name."
           },
           "store": {
-            "$ref": "#/components/schemas/SupportedDocumentStore"
+            "type": "string",
+            "const": "draganddrop",
+            "title": "Store",
+            "description": "Must be draganddrop with an API key."
           },
           "config": {
             "additionalProperties": true,
             "type": "object",
-            "title": "Config"
+            "title": "Config",
+            "description": "Send drive_id: the id of a drive you created with POST /drives."
           },
           "scope": {
-            "$ref": "#/components/schemas/Scope-Input"
+            "$ref": "#/components/schemas/Scope",
+            "description": "private (the key's user only) or organization."
           }
         },
         "additionalProperties": false,
@@ -2085,11 +3221,13 @@
         "properties": {
           "document_id": {
             "type": "string",
-            "title": "Document Id"
+            "title": "Document Id",
+            "description": "Source id, a #, and the document's own identifier."
           },
           "source_id": {
             "type": "integer",
-            "title": "Source Id"
+            "title": "Source Id",
+            "description": "Numeric id of the source. Use it in source_ids."
           },
           "document_name": {
             "type": "string",
@@ -2104,11 +3242,13 @@
                 "type": "null"
               }
             ],
-            "title": "Document Uri"
+            "title": "Document Uri",
+            "description": "Link to the document. null when there is none. For a drag-and-drop source it ends with the file id."
           },
           "source_pid": {
             "type": "string",
-            "title": "Source Pid"
+            "title": "Source Pid",
+            "description": "Public id of the source. Use it in paths."
           },
           "source_type": {
             "$ref": "#/components/schemas/SupportedDocumentStore"
@@ -2140,7 +3280,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "title": "Id"
+            "title": "Id",
+            "description": "Identifier of the drive. Use it as config.drive_id."
           },
           "files": {
             "items": {
@@ -2248,7 +3389,8 @@
           },
           "id": {
             "type": "string",
-            "title": "Id"
+            "title": "Id",
+            "description": "Identifier of the file."
           },
           "name": {
             "type": "string",
@@ -2656,6 +3798,139 @@
           "activation"
         ],
         "title": "InstalledSkillsAgentCapability"
+      },
+      "LLMModelCatalogOut": {
+        "properties": {
+          "input_cost": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Input Cost",
+            "default": "0"
+          },
+          "cache_read_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Cost"
+          },
+          "cache_write_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write Cost"
+          },
+          "output_cost": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Output Cost",
+            "default": "0"
+          },
+          "input_tokens_threshold": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens Threshold"
+          },
+          "above_threshold_input_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Input Cost"
+          },
+          "above_threshold_cache_read_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Cache Read Cost"
+          },
+          "above_threshold_cache_write_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Cache Write Cost"
+          },
+          "above_threshold_output_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Threshold Output Cost"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Name"
+          },
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "model_name",
+          "valid"
+        ],
+        "title": "LLMModelCatalogOut",
+        "description": "What a customer org admin may see of the registry: identity, validity\nand rates. Never ``params`` (provider config) nor ``langchain_class``."
       },
       "LLMModelChainIn": {
         "properties": {
@@ -3336,6 +4611,22 @@
           "enabled"
         ],
         "title": "MCPMessageScope"
+      },
+      "Manifest": {
+        "properties": {
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/Server"
+            },
+            "type": "array",
+            "title": "Servers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "servers"
+        ],
+        "title": "Manifest"
       },
       "MaybePartial_MessageOut_": {
         "anyOf": [
@@ -4481,13 +5772,128 @@
           }
         ]
       },
-      "Scope-Input": {
+      "Scope": {
         "type": "string",
         "enum": [
           "organization",
           "private"
         ],
         "title": "Scope"
+      },
+      "Server": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Stable integration id. Store it in capabilities.mcp.connections."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "title": "Is Enabled",
+            "description": "true when the integration is turned on."
+          },
+          "origin": {
+            "type": "string",
+            "title": "Origin",
+            "description": "builtin or remote today. Other values may appear."
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "description": "organization or user today."
+          },
+          "requires_oauth_connect": {
+            "type": "boolean",
+            "title": "Requires Oauth Connect",
+            "description": "true when someone must connect the integration with OAuth in the console first."
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Status",
+            "description": "For example connected. Omitted when unknown."
+          },
+          "icon_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Uri"
+          },
+          "mcp_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Url"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "title",
+          "description",
+          "is_enabled",
+          "origin",
+          "scope",
+          "requires_oauth_connect"
+        ],
+        "title": "Server"
       },
       "SetThreadsProject": {
         "properties": {
@@ -4773,7 +6179,8 @@
           "updated_at": {
             "type": "string",
             "format": "date-time",
-            "title": "Updated At"
+            "title": "Updated At",
+            "description": "When the default version was uploaded."
           },
           "display_name": {
             "type": "string",
@@ -4786,19 +6193,21 @@
           "scope": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/cominty__db__mixins__Scope"
+                "$ref": "#/components/schemas/Scope"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "null for a built-in skill."
           },
           "frontmatter": {
             "$ref": "#/components/schemas/SkillFrontmatter"
           },
           "source": {
             "$ref": "#/components/schemas/SkillSource",
-            "readOnly": true
+            "readOnly": true,
+            "description": "cominty for a built-in, read-only skill. custom for one you uploaded."
           }
         },
         "additionalProperties": false,
@@ -4834,7 +6243,8 @@
                 "type": "null"
               }
             ],
-            "title": "Display Name"
+            "title": "Display Name",
+            "description": "New name. 1 to 100 characters."
           },
           "active": {
             "anyOf": [
@@ -4845,17 +6255,19 @@
                 "type": "null"
               }
             ],
-            "title": "Active"
+            "title": "Active",
+            "description": "false keeps the skill but agents stop using it."
           },
           "scope": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Scope-Input"
+                "$ref": "#/components/schemas/Scope"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "private or organization."
           }
         },
         "additionalProperties": false,
@@ -4882,11 +6294,13 @@
           },
           "id": {
             "type": "integer",
-            "title": "Id"
+            "title": "Id",
+            "description": "Numeric id. Use it in source_ids on a capability or a scope."
           },
           "pid": {
             "type": "string",
-            "title": "Pid"
+            "title": "Pid",
+            "description": "Public id. Use it in every path."
           },
           "name": {
             "type": "string",
@@ -4902,11 +6316,13 @@
           },
           "store": {
             "type": "string",
-            "title": "Store"
+            "title": "Store",
+            "description": "draganddrop, googledrive or sharepoint. A key creates only draganddrop."
           },
           "status": {
             "type": "string",
-            "title": "Status"
+            "title": "Status",
+            "description": "pending, syncing, synced, error, out_of_sync, cancelling, pausing, paused, archived, disconnected, inoperative_connection, expired_connection, invalid_configuration or daily_quota_reached."
           },
           "size": {
             "type": "integer",
@@ -5000,16 +6416,19 @@
         "properties": {
           "name": {
             "type": "string",
-            "title": "Name"
+            "title": "Name",
+            "description": "New name of the source."
           },
           "connection_id": {
             "type": "string",
-            "title": "Connection Id"
+            "title": "Connection Id",
+            "description": "Not used with a drag-and-drop source."
           },
           "config": {
             "additionalProperties": true,
             "type": "object",
-            "title": "Config"
+            "title": "Config",
+            "description": "Not used with a drag-and-drop source: its drive cannot change."
           }
         },
         "additionalProperties": false,
@@ -5034,7 +6453,13 @@
             "title": "Name"
           },
           "store": {
-            "$ref": "#/components/schemas/SupportedDocumentStore"
+            "type": "string",
+            "enum": [
+              "googledrive",
+              "sharepoint"
+            ],
+            "title": "Store",
+            "description": "Not available with an API key: it returns 400 Store not available for API keys."
           },
           "config": {
             "additionalProperties": true,
@@ -5042,7 +6467,7 @@
             "title": "Config"
           },
           "scope": {
-            "$ref": "#/components/schemas/Scope-Input"
+            "$ref": "#/components/schemas/Scope"
           }
         },
         "additionalProperties": false,
@@ -5192,7 +6617,7 @@
             "title": "Expires At"
           },
           "scope": {
-            "$ref": "#/components/schemas/Scope-Input"
+            "$ref": "#/components/schemas/Scope"
           }
         },
         "type": "object",
@@ -5579,12 +7004,14 @@
         "properties": {
           "url": {
             "type": "string",
-            "title": "Url"
+            "title": "Url",
+            "description": "Storage URL to POST the file to. Do not send x-cominty-token there."
           },
           "fields": {
             "additionalProperties": true,
             "type": "object",
-            "title": "Fields"
+            "title": "Fields",
+            "description": "Form fields to send with the file to the storage URL."
           }
         },
         "type": "object",
@@ -6408,37 +7835,6 @@
           "name"
         ],
         "title": "ProjectOut"
-      },
-      "cominty__api__services__mcp__Scope": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "title",
-          "description"
-        ],
-        "title": "Scope"
-      },
-      "cominty__db__mixins__Scope": {
-        "type": "string",
-        "enum": [
-          "organization",
-          "private"
-        ],
-        "title": "Scope"
       }
     },
     "securitySchemes": {
