@@ -8,8 +8,8 @@ An API key can create and manage agents, the same way an admin does on the
 agent runs like [Hive](/guides/agents), with the capabilities, instructions, and
 models you give it. Pass its id as `agent_id` to any chat call.
 
-This page works for the [Python SDK](/sdk/overview) and for HTTP. Each snippet
-has a tab for both.
+This page works for the [Python SDK](/sdk/overview), the
+[JavaScript SDK](/js-sdk/overview), and HTTP. Each snippet has a tab for each.
 
 ## What an API key can do
 
@@ -46,6 +46,15 @@ An agent refers to integrations and models by id. Read them from the API.
     print(repr(models[0]))                      # LLMModelSummaryOut(id='...', name='...')
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const servers = await client.mcp.list()        // integrations that are turned on
+    const models = await client.agents.listModels() // models you can chain
+
+    console.log(servers.map((server) => server.name)) // ['datagouv', 'linear', ...]
+    console.log(models[0])                            // { id: '...', name: '...' }
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl "https://ds.cominty.com/mcp/manifest" \
@@ -59,11 +68,12 @@ An agent refers to integrations and models by id. Read them from the API.
 
 - A server's `name` is the value to store in `McpCapability.connections`. The
   default `mcp.list()` keeps only the integrations that are turned on. Pass
-  `enabled=None` to see every server. See
-  [`client.mcp`](/sdk/reference#client-mcp).
+  `enabled=None` (JavaScript: `{ enabled: null }`) to see every server. See
+  [`client.mcp`](/sdk/reference#client-mcp) and the
+  [JavaScript `client.mcp`](/js-sdk/reference#client-mcp).
 - `requires_oauth_connect` is `True` when someone must connect the integration
   with OAuth in the console first. See [MCP integrations](/mcp/overview).
-- A model's `id` goes in `model_ids`.
+- A model's `id` goes in `model_ids` (JavaScript: `modelIds`).
 
 ## Create an agent
 
@@ -84,6 +94,22 @@ An agent refers to integrations and models by id. Read them from the API.
         model_ids=[models[0].id],
     )
     print(agent.id, agent.owner)
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    let agent = await client.agents.create({
+        name: 'Linear helper',
+        description: 'Created through the API key',
+        instructions: 'Use your Linear tools when asked about Linear. Be brief.',
+        scope: 'organization',
+        capabilities: {
+            mcp: { activation: 'always', connections: ['linear'] },
+            web: { activation: 'never' },
+        },
+        modelIds: [models[0]!.id],
+    })
+    console.log(agent.id, agent.owner)
     ```
   </Tab>
   <Tab title="HTTP">
@@ -154,6 +180,16 @@ Use the id like any other agent.
     print(message.status.value, "|", message.content)
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: agent.id,
+        message: 'Use your Linear tools to list my Linear teams.',
+    })
+    const message = await run.result()
+    console.log(message.status, '|', message.content)
+    ```
+  </Tab>
   <Tab title="HTTP">
     Send `POST /chat` with `options.agent_id` set to the agent's id. See the
     [API reference](/api-reference).
@@ -187,6 +223,21 @@ An update is partial: send only what you want to change.
     #  'memory': {'activation': 'never'}}
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    agent = await client.agents.update(agent.id, {
+        name: 'Linear helper v2',
+        description: null,
+    })
+    agent = await client.agents.update(agent.id, {
+        capabilities: { web: { activation: 'always' } },
+    })
+    console.log(agent.capabilities)
+    // { web: { activation: 'always' },
+    //   mcp: { activation: 'always', connections: ['linear'] },
+    //   memory: { activation: 'never' } }
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X PUT "https://ds.cominty.com/agents/$AGENT_ID" \
@@ -201,13 +252,14 @@ An update is partial: send only what you want to change.
   </Tab>
 </Tabs>
 
-- `None` (HTTP: `null`) clears `description`, `instructions`, and
+- `None` (JavaScript and HTTP: `null`) clears `description`, `instructions`, and
   `capabilities`.
 - `capabilities` is **merged capability by capability**. Each capability you
   send replaces the stored one, and the others stay. In the example, `web`
   changed and `mcp` was kept.
 - You cannot clear `name`, `scope`, or `allow_execution_options_override`. The
-  SDK raises `InvalidParams` for `None`, and for an update with no argument.
+  SDKs raise `InvalidParams` for `None` (JavaScript: `null`), and for an update
+  with no argument.
 - An organization agent owned by someone else can be updated and deleted with the
   key.
 
@@ -226,6 +278,15 @@ when it fails.
     print([model.name for model in agent.models])  # failover order
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const models = await client.agents.listModels()
+    agent = await client.agents.setModels(agent.id, {
+        modelIds: [models[1]!.id, models[0]!.id],
+    })
+    console.log(agent.models.map((model) => model.name)) // failover order
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X PUT "https://ds.cominty.com/agents/$AGENT_ID/models" \
@@ -237,7 +298,7 @@ when it fails.
 </Tabs>
 
 - An unknown id returns 404 with `detail` `Bad model_ids`. An empty list returns
-  422. The SDK raises `InvalidParams` for an empty list, before any request.
+  422. The SDKs raise `InvalidParams` for an empty list, before any request.
 - `create(model_ids=...)` sets the chain at creation. Omit it for the
   organization's default chain.
 
@@ -255,6 +316,13 @@ when it fails.
     summaries = await client.agents.list()   # AgentSummaryOut: no instructions, no models
     agent = await client.agents.get(agent.id)  # AgentOut: the full agent
     await client.agents.delete(agent.id)     # returns None
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const summaries = await client.agents.list()   // AgentSummary: no instructions, no models
+    agent = await client.agents.get(agent.id)      // AgentDetail: the full agent
+    await client.agents.delete(agent.id)           // resolves to undefined
     ```
   </Tab>
   <Tab title="HTTP">
@@ -284,7 +352,8 @@ their agent as `"ARCHIVED"`.
 | `skills.include` names a skill the key cannot read | `APIError` (422) | 422 |
 | Delete twice | `NotFoundError` | 404 |
 
-For the exception classes, see the [SDK reference](/sdk/reference#exceptions).
+For the error classes, see the [Python SDK reference](/sdk/reference#exceptions)
+and the [JavaScript SDK reference](/js-sdk/reference#errors).
 
 ## Next steps
 

@@ -93,6 +93,19 @@
         ]
       },
       {
+        "tab": "JavaScript SDK",
+        "groups": [
+          {
+            "group": "JavaScript SDK",
+            "pages": [
+              "js-sdk/overview",
+              "js-sdk/quickstart",
+              "js-sdk/reference"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "API Reference",
         "groups": [
           {

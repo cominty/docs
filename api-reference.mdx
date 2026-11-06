@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "The Cominty API: the HTTP endpoints behind the Python SDK"
+description: "The Cominty API: the HTTP endpoints behind the Python and JavaScript SDKs"
 ---
 
 The Cominty API is a standard HTTPS/JSON API for chatting with agents,
@@ -8,8 +8,8 @@ managing conversation threads, handling file uploads/downloads and message
 exports, storing memory files in named namespaces, and configuring what a
 signed-in admin configures in the console: MCP integrations, agents, skills,
 document sources, and documents. Every endpoint below is called by the
-[Python SDK](/sdk/overview). Use the SDK for the smoothest experience, or call
-them directly.
+[Python SDK](/sdk/overview) and the [JavaScript SDK](/js-sdk/overview). Use an
+SDK for the smoothest experience, or call them directly.
 
 ## Base URL
 
@@ -56,7 +56,7 @@ before the prefix existed has no `sk-cmt-` and keeps working when sent as is.
 <Note>
   Chat and threads are scoped to one end user via `user_id`. Chat start sends
   it in the body (`options.user_id`). Thread endpoints send it as a query
-  parameter. The SDK fills this in from the client, so you never pass it on
+  parameter. The SDKs fill this in from the client, so you never pass it on
   those calls. Memory endpoints may accept `user_id` as an optional query, but
   it does not select a memory namespace. See
   [Memory endpoints](#memory-endpoints).
@@ -255,7 +255,7 @@ legacy fields are deprecated and will be removed in a later version.
 An API key acts as an **admin of its own organization**. It can call the
 agent, skill, drive, source, and document endpoints below, and read the model
 catalog. These endpoints do not take `user_id`. For the concepts and the
-Python SDK, see [Custom agents](/guides/custom-agents), [Skills](/guides/skills),
+SDKs, see [Custom agents](/guides/custom-agents), [Skills](/guides/skills),
 and [Sources](/guides/sources). This section covers what is specific to the
 endpoints.
 
@@ -398,7 +398,7 @@ Any other combination returns **400** `Operation is not valid`. An unknown
   A source created with a key is private to the key owner. A chat that searches
   it must run with the owner's `user_id`, as the agent's `owner` shows. With
   another `user_id`, the agent's document tool reports that it has no authorized
-  source. See [Sources](/guides/sources#chat-with-the-key-owners-user-id).
+  source. See [Sources](/guides/sources#chat-as-the-key-owner).
 </Note>
 
 ### Document endpoint

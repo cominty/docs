@@ -5,12 +5,32 @@ description: "Welcome to the Cominty documentation"
 
 Cominty is an AI platform for building agents that work with your company's
 knowledge and data sources. This documentation covers how to get started,
-concept guides, MCP integrations, the Python SDK, and the API reference.
+concept guides, MCP integrations, the Python and JavaScript SDKs, and the API
+reference.
 
 <Tip>
   New here? Start with the [Quickstart](/quickstart) to send your first message,
-  then dive into the [Python SDK](/sdk/overview).
+  then dive into the [Python SDK](/sdk/overview) or the
+  [JavaScript SDK](/js-sdk/overview).
 </Tip>
+
+## Official SDKs
+
+Two official, fully typed SDKs wrap the API. Both cover the same features:
+chat and streaming, threads, files, memory, capabilities, agents, skills,
+sources, and MCP integrations.
+
+<CardGroup cols={2}>
+  <Card title="Python SDK" icon="python" href="/sdk/overview">
+    `pip install cominty-sdk`. Async client for Python 3.9+.
+  </Card>
+  <Card title="JavaScript SDK" icon="js" href="/js-sdk/overview">
+    `npm install @cominty-ai/sdk`. TypeScript client for Node, Bun, Deno, and
+    edge workers, with zero dependencies.
+  </Card>
+</CardGroup>
+
+## Explore the docs
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/quickstart">
@@ -43,13 +63,13 @@ concept guides, MCP integrations, the Python SDK, and the API reference.
   <Card title="MCP integrations" icon="plug" href="/mcp/overview">
     Connect agents to BigQuery, Slack, HubSpot, and more.
   </Card>
-  <Card title="Python SDK" icon="python" href="/sdk/overview">
-    Async, fully-typed client: install, examples, and reference.
-  </Card>
   <Card title="API Reference" icon="code" href="/api-reference">
     Every endpoint, with live request and response examples.
   </Card>
-  <Card title="GitHub" icon="github" href="https://github.com/cominty/python-sdk">
+  <Card title="Python SDK on GitHub" icon="github" href="https://github.com/cominty/python-sdk">
+    SDK source, issues, and runnable examples.
+  </Card>
+  <Card title="JavaScript SDK on GitHub" icon="github" href="https://github.com/cominty/js-sdk">
     SDK source, issues, and runnable examples.
   </Card>
 </CardGroup>

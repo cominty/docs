@@ -9,7 +9,8 @@ You can upload skills with an API key, the same way an admin does on the
 [Custom agents](/guides/custom-agents#what-an-api-key-can-do) first for what an
 API key can and cannot see.
 
-Each snippet has a tab for the [Python SDK](/sdk/overview) and for HTTP.
+Each snippet has a tab for the [Python SDK](/sdk/overview), the
+[JavaScript SDK](/js-sdk/overview), and HTTP.
 
 ## Write a skill
 
@@ -52,6 +53,19 @@ what the skill does and when to use it.
         display_name="Release notes",
     )
     print(skill.model_dump_json(indent=2))
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { readFile } from 'node:fs/promises'
+
+    // The skill's files by path, SKILL.md at the root. The SDK zips them in memory.
+    const files = {
+        'SKILL.md': await readFile('release-notes/SKILL.md'),
+        'reference.md': await readFile('release-notes/reference.md'),
+    }
+    let skill = await client.skills.create(files, { displayName: 'Release notes' })
+    console.log(JSON.stringify(skill, null, 2))
     ```
   </Tab>
   <Tab title="HTTP">
@@ -99,7 +113,7 @@ what the skill does and when to use it.
 
 ### What `file` can be
 
-The SDK accepts three inputs.
+The Python SDK accepts three inputs.
 
 | Input | What happens |
 | ----- | ------------ |
@@ -108,6 +122,13 @@ The SDK accepts three inputs.
 | `bytes` | Sent as is. It must be a zip archive. |
 
 A plain `str` raises `InvalidParams`. Wrap a path in `Path(...)`.
+
+The JavaScript SDK takes no path. It accepts a zip (`Blob`, `File`,
+`ArrayBuffer`, or `Uint8Array`), sent as is, or an object of the skill's files
+by `/`-separated path, such as `{ 'SKILL.md': '...', 'reference.md': bytes }`.
+The SDK zips that object in memory. It must hold `SKILL.md` at its root, and
+entries with a path part that starts with `.` are left out. A string throws
+`InvalidParams`. See [`client.skills`](/js-sdk/reference#client-skills).
 
 The server accepts two zip layouts:
 
@@ -134,6 +155,18 @@ Put the skill's `id` in a `SkillsCapability`.
     )
     run = await client.chat.start(agent_id=agent.id, message="Give me the QA greeting.")
     print((await run.result()).content)   # QA-HELLO-4F2A
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const agent = await client.agents.create({
+        name: 'Greeter',
+        capabilities: {
+            skills: { activation: 'always', include: [skill.id] },
+        },
+    })
+    const run = await client.chat.start({ agentId: agent.id, message: 'Give me the QA greeting.' })
+    console.log((await run.result()).content) // QA-HELLO-4F2A
     ```
   </Tab>
   <Tab title="HTTP">
@@ -173,6 +206,23 @@ read makes the creation fail with 422. For the other ways to narrow skills, see
     await client.skills.delete(skill.id)
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const skills = await client.skills.list()
+
+    skill = await client.skills.update(skill.id, {
+        displayName: 'Release notes v1',
+        active: false,
+        scope: 'organization',
+    })
+    skill = await client.skills.update(skill.id, { active: true })
+
+    skill = await client.skills.uploadVersion(skill.id, files)
+    console.log(skill.frontmatter.description, skill.updated_at)
+
+    await client.skills.delete(skill.id)
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl "https://ds.cominty.com/skills" -H "x-cominty-token: $COMINTY_API_KEY"
@@ -193,12 +243,12 @@ read makes the creation fail with 422. For the other ways to narrow skills, see
 </Tabs>
 
 - `list` returns the built-in Cominty skills (`source` is `"cominty"`, `scope` is
-  `None`, read-only), the organization skills, and the key owner's skills. A
+  `None`, or `null` in JavaScript, read-only), the organization skills, and the key owner's skills. A
   private skill of another member is not there.
-- `update` sends only the fields you pass: `display_name`, `active`, and
-  `scope`. Passing none raises `InvalidParams`. `active=False` keeps the skill,
+- `update` sends only the fields you pass: `display_name` (JavaScript:
+  `displayName`), `active`, and `scope`. Passing none raises `InvalidParams`. `active=False` keeps the skill,
   and agents stop using it.
-- `upload_version` makes the new version the default. `frontmatter` and
+- `upload_version` (JavaScript: `uploadVersion`) makes the new version the default. `frontmatter` and
   `updated_at` then describe it. Versions are tagged to the second: two uploads
   of one skill within a second collide and return 500. Space them out.
 - `delete` is permanent and removes every version. HTTP answers 200 with a
@@ -212,9 +262,9 @@ read makes the creation fail with 422. For the other ways to narrow skills, see
 | ------------- | --- | ---- |
 | `display_name` is empty or over 100 characters | `InvalidParams`, before any request | 422 over 100 characters |
 | The archive is over 30 MB | `InvalidParams`, before any request | 413 |
-| The folder has no `SKILL.md`, or the input is a `str` | `InvalidParams`, before any request | - |
+| The folder (JavaScript: the files object) has no `SKILL.md`, or the input is a string | `InvalidParams`, before any request | - |
 | The zip layout or the frontmatter is wrong | `APIError` (422) | 422 |
-| The file cannot be read | `OSError` | - |
+| The file cannot be read | `OSError` (Python) | - |
 | Unknown skill, or a built-in one, on `update` or `delete` | `NotFoundError` | 404 |
 
 Do not send a `surface` field over HTTP. The skill takes the key's surface, and

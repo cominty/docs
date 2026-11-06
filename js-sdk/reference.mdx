@@ -1,0 +1,890 @@
+---
+title: "Reference"
+description: "Resources, run handles, data types, events, and errors of the JavaScript SDK"
+---
+
+This page documents the SDK's public surface. For task-oriented examples, see the
+[Quickstart](/js-sdk/quickstart) and the [guides](/guides/memory-namespaces). For
+the underlying HTTP endpoints, see the [API reference](/api-reference).
+
+Every name on this page is exported from `@cominty-ai/sdk`, types included:
+
+```ts
+import { Cominty, type Message, type MessageParams } from '@cominty-ai/sdk'
+```
+
+Arguments you pass use `camelCase` (`agentId`, `fileIds`). Response objects keep
+the API's `snake_case` field names (`thread_id`, `created_at`). Every method
+takes an optional `signal` (an `AbortSignal`) in its last argument.
+
+## Client
+
+```ts
+new Cominty({
+    userId,                  // required (option or COMINTY_USER_ID), validated locally
+    apiToken,                // required (option or COMINTY_API_KEY)
+    baseUrl,                 // default https://ds.cominty.com (or COMINTY_BASE_URL)
+    timeout,                 // milliseconds, default 60000; streams are exempt
+    fetch,                   // default: the global fetch
+    dangerouslyAllowBrowser, // default false
+})
+```
+
+- `userId` is mandatory, validated at construction (`^user_[A-Za-z0-9]{20,}$`).
+  Chat and thread requests send it. Memory requests do not. Resource methods
+  never take `userId`.
+- A missing key or user id, a malformed user id, or a browser without
+  `dangerouslyAllowBrowser` throws a plain `Error`, not a `ComintyError`. These
+  are configuration mistakes to fix.
+- The client holds no persistent connection. `client.close()` aborts every
+  request and stream in flight. `await using client = new Cominty()` calls it
+  when the client goes out of scope.
+- Properties: `client.userId`, `client.baseUrl`.
+- Resources: `client.chat`, `client.threads`, `client.memory`, `client.mcp`,
+  `client.agents`, `client.skills`, `client.sources`, `client.documents`. The
+  last five do not send `userId` either.
+
+See [Configuration](/js-sdk/overview#configuration) for the full settings table
+and resolution order.
+
+## Resources
+
+### `client.chat`
+
+| Method   | Signature | Returns |
+| -------- | --------- | ------- |
+| `start`  | `start({ agentId, message, name?, fileIds?, threadCapabilities?, messageScope?, maxSteps?, signal? })` | `Promise<StartedChat>` |
+| `send`   | `send(threadId, { agentId, message, fileIds?, messageScope?, maxSteps?, signal? })` | `Promise<AssistantRun>` |
+| `stream` | `stream(messageId, { lastEventId?, signal? }?)` | `AssistantRun` (no I/O until consumed) |
+| `cancel` | `cancel(messageId, { signal? }?)` | `Promise<Message>` (`status` becomes `'cancelled'`) |
+| `export` | `export(messageId, { format, signal? })` | `Promise<Uint8Array>` (raw file content) |
+| `uploadFile` | `uploadFile(file, { filename?, mimetype?, signal? }?)` | `Promise<ConversationFile>` |
+| `downloadFile` | `downloadFile(fileId, { signal? }?)` | `Promise<Uint8Array>` (raw file content) |
+
+- `message` is at most 30,000 characters. `fileIds` holds at most 5 ids.
+- `start` returns a `StartedChat`, a run whose `.thread` is always set.
+  `threadCapabilities` is optional and only accepted here. Passing it to `send`
+  throws [`InvalidParams`](#errors). `messageScope` is accepted by both. See
+  [Capabilities](#capabilities).
+- `maxSteps` caps the tool rounds of one message. See [`maxSteps`](#maxsteps)
+  below and [Limiting agent steps](/guides/max-steps).
+- `send` returns an `AssistantRun` whose `.thread` is `undefined`. You hold the
+  `threadId`, and `threads.get` fetches the rest. Use it to answer the agent's
+  questions. Read the previous message to the end, or cancel it, before you call
+  `send`: see [One message at a time](#one-message-at-a-time).
+- Invalid arguments throw [`InvalidParams`](#errors) **before** any request is
+  sent, naming every bad argument at once.
+- `signal` cancels the request and the run's stream. It only closes your
+  connection: the agent keeps running on the server. To stop the agent, call
+  `cancel`.
+
+<Note>
+  `sourceIds`, `documentIds`, and `disabledTools` (on `start` and `send`) and
+  `memoryNamespace` (on `start`) still work but are deprecated. Use
+  `messageScope` and `threadCapabilities.memory`. Mixing them with the new
+  arguments throws `InvalidParams`: `messageScope` with any of the first three,
+  or `memoryNamespace` with `threadCapabilities.memory`.
+</Note>
+
+#### Stop a message
+
+`cancel` stops an assistant message that is still being generated. It resolves
+with the message, its `status` set to `'cancelled'`. What the agent produced
+before the stop stays in `events`.
+
+| Case | Result |
+| ---- | ------ |
+| The message is running | Resolves with the `Message`, `status` is `'cancelled'` |
+| The message finished, failed, or was already cancelled | [`APIError`](#errors) (400, `Message is not live`) |
+| A user message | [`APIError`](#errors) (400): user messages are never live |
+| An unknown message | [`NotFoundError`](#errors) (404) |
+| `messageId` is not a UUID | [`InvalidParams`](#errors) before any request |
+
+`cancel` is not idempotent. A "stop" button should treat the 400 as "too late,
+nothing to stop". A cancelled message frees the thread right away: you can send
+the next message without reading the cancelled message's events. See
+[One message at a time](#one-message-at-a-time).
+
+#### Export a message: `export`
+
+`export(messageId, { format })` renders a message to a document and returns the
+raw bytes. `format` is `'pdf'` or `'docx'` (type `ExportFormat`).
+
+| Case | Result |
+| ---- | ------ |
+| A message with content | The file as a `Uint8Array` |
+| Any other `format`, or a `messageId` that is not a UUID | [`InvalidParams`](#errors) before any request |
+| A message with no content, for example one still running | [`APIError`](#errors) (400, `Message has no content`) |
+| An unknown message | [`NotFoundError`](#errors) (404) |
+
+The server sends no file name. Pick one when you write the bytes.
+
+#### Upload and download files
+
+`uploadFile` registers a file and resolves with a `ConversationFile`. Pass its
+`id` in `fileIds` on `start` and `send`, at most 5 files per message.
+
+| `file` | `filename` | Result |
+| ------ | ---------- | ------ |
+| A `File` | Optional. Defaults to the file's name. | Name and type are used |
+| A `Blob` (in Node, `await openAsBlob(path)`) | Required | The type is the `Blob`'s, or guessed from the name |
+| An `ArrayBuffer`, a `Uint8Array`, or a Node `Buffer` | Required | The type is guessed from the name |
+| A string, or anything else | - | [`InvalidParams`](#errors): a string is ambiguous between a path and text |
+
+- `filename` is 1 to 255 characters and cannot contain `/`.
+- `mimetype` is optional. Left out, it is the `Blob`'s type, then a guess from
+  the file name, then `application/octet-stream`.
+- A file is at most 500 MiB (`UPLOAD_MAX_BYTES`). A bigger one throws
+  [`InvalidParams`](#errors) before anything is sent.
+- The client's `timeout` applies to each of the three requests of an upload.
+
+`downloadFile(fileId)` returns the bytes of any conversation file, including
+the ones the agent produced. An empty `fileId` throws [`InvalidParams`](#errors).
+An unknown file throws [`NotFoundError`](#errors). The call is not scoped to the
+client's `userId`: any file created through the API in your organization can be
+downloaded. The whole file is held in memory.
+
+<Warning>
+  `uploadFile` makes 3 calls: it requests a presigned upload permission,
+  sends your bytes **directly to the storage host**, then confirms the upload
+  with Cominty. `downloadFile` also fetches from a presigned URL. Your API key
+  is only sent to the Cominty API, never to the storage host. Error messages
+  leave out the presigned URL's signature. A storage refusal, or a redirect,
+  throws the [`APIError`](#errors) for its status, with the storage reason as
+  `detail`, for example `EntityTooLarge`. An answer the SDK cannot use (no
+  `ETag`, no presigned `key`) throws `SDKError`. The multi-step flow only
+  matters if you call the HTTP endpoints yourself. See
+  [Files and exports](/api-reference#files-and-exports).
+</Warning>
+
+<Note>
+  The API has no call to list or delete uploaded files, and it enforces a daily
+  upload quota per organization. Another deployment can also set a lower size
+  limit.
+</Note>
+
+#### `maxSteps`
+
+`maxSteps` is an optional `number` on `start` and `send`.
+
+| Value | Result |
+| ----- | ------ |
+| Left out, or `undefined` | The field is left out of the request. The server applies its own default (60 today). |
+| An integer `>= 1` | Sent as `options.max_steps`. |
+| `null`, `0`, a negative number, a fraction, `NaN`, `Infinity`, a boolean, or a string | [`InvalidParams`](#errors) is thrown before any request. |
+
+```ts
+import { InvalidParams } from '@cominty-ai/sdk'
+
+try {
+    await client.chat.start({ agentId: AGENT_ID, message: 'hi', maxSteps: 0 })
+} catch (error) {
+    if (!(error instanceof InvalidParams)) throw error
+    console.log(error.message)
+}
+```
+
+The value is not stored and not returned. Keep it yourself if you need it.
+
+### `client.threads`
+
+Scoped to the client's `userId` automatically.
+
+| Method    | Signature | Returns |
+| --------- | --------- | ------- |
+| `list`    | `list({ limit?, page?, terms?, signal? }?)` | `Promise<ThreadSummary[]>`, newest first |
+| `get`     | `get(threadId, { signal? }?)` | `Promise<Thread>` (full history) |
+| `update`  | `update(threadId, { name?, starred?, signal? })` | `Promise<ThreadSummary>` |
+| `archive` | `archive(threadId, { signal? }?)` | `Promise<void>` (soft delete) |
+
+`limit` defaults to 50, at most 100. `page` is zero-based. To read everything,
+request pages until one comes back shorter than `limit`.
+
+### `client.memory`
+
+Scoped to a caller-chosen namespace, shared by the API key. Not scoped to
+`userId`. `client.memory` does not send `userId`. Concepts:
+[Memory namespaces](/guides/memory-namespaces).
+
+| Method   | Signature | Returns |
+| -------- | --------- | ------- |
+| `list`   | `list({ namespace?, signal? }?)` | `Promise<MemoryFileSummary[]>` (no `content`) |
+| `listNamespaces` | `listNamespaces({ signal? }?)` | `Promise<string[]>` |
+| `create` | `create({ path, namespace, purpose, content, signal? })` | `Promise<MemoryFile>` |
+| `get`    | `get(path, { namespace, signal? })` | `Promise<MemoryFile>` |
+| `update` | `update(path, { namespace, version, content?, purpose?, signal? })` | `Promise<MemoryFile>` |
+| `delete` | `delete(path, { namespace, signal? })` | `Promise<void>` |
+
+<Warning>
+  `namespace` is required on `create`, `get`, `update`, and `delete`. It is a
+  string of at most 128 characters, checked locally, and never trimmed. `path`
+  may have **at most one folder segment**. `"notes/todo.md"` is fine,
+  `"a/b/todo.md"` isn't. The SDK throws [`InvalidParams`](#errors) before any
+  request. `content` may be an empty string. There's no minimum length.
+</Warning>
+
+<Warning>
+  `update` is partial: only the fields you pass are sent, and at least one of
+  `content` or `purpose` is required. **There is currently no way to clear
+  `content` or `purpose` once set**. The API silently ignores an explicit `null`
+  (200, value unchanged), so the SDK throws [`InvalidParams`](#errors) locally
+  for `content: null` or `purpose: null` instead of sending a request that looks
+  like it succeeded but did nothing. `version` is required and must be the value
+  from your last read of the file. A stale one throws
+  [`ConflictError`](#errors) (409). A malformed one throws
+  [`APIError`](#errors) (422). Treat `version` as an opaque token. Round-trip
+  it, never parse or compare it.
+</Warning>
+
+<Warning>
+  `delete` is **not idempotent**: deleting an already-deleted (or
+  never-existing) path throws [`NotFoundError`](#errors) (404) rather than
+  succeeding again.
+</Warning>
+
+- `list()` with no filter returns every file visible to the API key. Pass
+  `namespace` to keep one namespace. Without it, the same path can appear once
+  per namespace, so key a file by both.
+- `create` throws [`ConflictError`](#errors) if the path already exists in the
+  namespace.
+- `purpose` is 1 to 100 characters once trimmed, and `content` is at most 1 MiB.
+  The API checks these and answers with an [`APIError`](#errors).
+- `Thread`, `ThreadSummary`, and `Message` do not expose the thread's namespace.
+
+### `client.mcp`
+
+Lists the MCP integrations the API key can use (`GET /mcp/manifest`). See
+[MCP integrations](/mcp/overview#list-the-integrations-from-code).
+
+| Method | Signature | Returns |
+| ------ | --------- | ------- |
+| `list` | `list({ enabled?, signal? }?)` | `Promise<McpServer[]>` (may be empty) |
+
+- `enabled: true` (the default) keeps the servers that are turned on.
+  `enabled: false` keeps the ones that are off. `enabled: null` returns every
+  server, in API order. The API returns all of them, and the SDK filters on
+  `is_enabled`.
+- `name` is the value to store in `mcp.connections`, in `threadCapabilities`,
+  `messageScope`, or an agent's `capabilities`.
+- `origin` is `'builtin'` or `'remote'`, and `scope` is `'organization'` or
+  `'user'`, today. Both are plain strings, and other values may appear.
+- `requires_oauth_connect` is `true` when someone must connect the integration
+  with OAuth on the platform first. `connection_status` (for example
+  `'connected'`) is present when known.
+- If the manifest cannot be loaded, the API answers 500 and the SDK throws
+  [`ServerError`](#errors).
+
+### `client.agents`
+
+Manages custom agents and their model chain. Concepts:
+[Custom agents](/guides/custom-agents).
+
+| Method | Signature | Returns |
+| ------ | --------- | ------- |
+| `list` | `list({ signal? }?)` | `Promise<AgentSummary[]>` |
+| `listModels` | `listModels({ signal? }?)` | `Promise<LlmModel[]>` |
+| `get` | `get(agentId, { signal? }?)` | `Promise<AgentDetail>` |
+| `create` | `create({ name, description?, instructions?, scope?, capabilities?, allowExecutionOptionsOverride?, modelIds?, signal? })` | `Promise<AgentDetail>` |
+| `update` | `update(agentId, { name?, description?, instructions?, scope?, capabilities?, allowExecutionOptionsOverride?, signal? })` | `Promise<AgentDetail>` |
+| `setModels` | `setModels(agentId, { modelIds, signal? })` | `Promise<AgentDetail>` |
+| `delete` | `delete(agentId, { signal? }?)` | `Promise<void>` |
+
+| Case | Result |
+| ---- | ------ |
+| Empty `name`, `description` over 500 characters, `instructions` over 30000, or an empty `modelIds` | [`InvalidParams`](#errors) before any request |
+| `update` with no field, or `null` for `name`, `scope`, or `allowExecutionOptionsOverride` | [`InvalidParams`](#errors) before any request |
+| `null` for `description`, `instructions`, or `capabilities` on `update` | Clears the value |
+| `skills.include` on `create` names a skill the key cannot read | [`APIError`](#errors) (422) |
+| Unknown agent, a built-in agent, an agent of another organization, or another member's private agent | [`NotFoundError`](#errors), `detail` `Not Found` |
+| `setModels` with an unknown model id | [`NotFoundError`](#errors), `detail` `Bad model_ids` |
+
+- `scope` is `'private'` (the default, the key owner only) or `'organization'`
+  (every member). The type is `Scope`.
+- `update` is partial: only the fields you pass are sent. A `capabilities`
+  object is merged capability by capability: each one you pass replaces the
+  stored one, the others stay.
+- An agent's `capabilities` come back in the camelCase shape you pass, so a read
+  can go straight back into `update`. A capability this SDK version does not
+  know is left out of the read, and the API keeps it on update.
+- `create({ modelIds })` sets the model chain. Leave it out for the
+  organization's default chain. The chain is a failover order.
+- On a built-in agent (`managed` is `true`), `setModels` changes the chain of
+  the whole organization for that agent. `update` and `delete` throw
+  `NotFoundError`.
+- `list()` returns the built-in agents, the organization agents, and the key
+  owner's private agents. It returns `AgentSummary`: no `instructions`, no
+  `models`. Call `get` for the full `AgentDetail`.
+- Use `capabilities` (`capabilities.memory` sets the namespace), not the legacy
+  `execution_options` and `memory_namespace` fields of a read.
+- `delete` is permanent. The API answers 204, and the SDK resolves with
+  `undefined`.
+
+### `client.skills`
+
+Manages custom skills. Concepts: [Skills](/guides/skills).
+
+| Method | Signature | Returns |
+| ------ | --------- | ------- |
+| `list` | `list({ signal? }?)` | `Promise<Skill[]>` |
+| `create` | `create(file, { displayName, scope?, signal? })` | `Promise<Skill>` |
+| `update` | `update(skillId, { displayName?, active?, scope?, signal? })` | `Promise<Skill>` |
+| `uploadVersion` | `uploadVersion(skillId, file, { signal? }?)` | `Promise<Skill>` |
+| `delete` | `delete(skillId, { signal? }?)` | `Promise<void>` |
+
+`file` is a `SkillArchive`, one of:
+
+- a zip archive (`Blob`, `File`, `ArrayBuffer`, `Uint8Array`), sent as it is;
+- a `SkillFiles` object: the skill's files by `/`-separated path, with
+  `SKILL.md` at the root. Values are strings (written as UTF-8) or bytes. The
+  SDK zips them in memory and leaves out entries with a path part starting with
+  `.`.
+
+```ts
+const skill = await client.skills.create(
+    { 'SKILL.md': '---\nname: haiku-replies\ndescription: Answer as a haiku.\n---\n' },
+    { displayName: 'Haiku replies' },
+)
+```
+
+| Case | Result |
+| ---- | ------ |
+| A plain string, a `SkillFiles` object with no `SKILL.md` or with an absolute or `..` path, `displayName` not 1 to 100 characters, or an archive over 30 MB | [`InvalidParams`](#errors) before any request |
+| `update` with nothing to change | [`InvalidParams`](#errors) before any request |
+| The zip layout or the frontmatter is wrong | [`APIError`](#errors) (422), `detail` starts with `Invalid zip structure.` for a layout |
+| The archive is too large for the server | [`APIError`](#errors) (413) |
+| Two uploads of one skill within one second | [`APIError`](#errors) (500) |
+| `update`, `uploadVersion`, or `delete` on a built-in skill, or one the key owner does not own | [`NotFoundError`](#errors) |
+
+The skill takes the key's surface: there is no `surface` argument. `delete` is
+permanent, every version included.
+
+### `client.sources`
+
+Turns files into an indexed document source. Concepts:
+[Sources](/guides/sources).
+
+| Method | Signature | Returns |
+| ------ | --------- | ------- |
+| `create` | `create(files, { name?, signal? }?)` | `Promise<Source>` (`pending` or `syncing`) |
+| `list` | `list({ signal? }?)` | `Promise<Source[]>` |
+| `get` | `get(sourcePid, { signal? }?)` | `Promise<Source>` |
+| `update` | `update(sourcePid, { name, signal? })` | `Promise<Source>` |
+| `addFiles` | `addFiles(sourcePid, files, { signal? }?)` | `Promise<SourceFile[]>`, in upload order |
+| `listFiles` | `listFiles(sourcePid, { signal? }?)` | `Promise<SourceFile[]>` |
+| `removeFile` | `removeFile(sourcePid, fileId, { signal? }?)` | `Promise<void>` |
+| `downloadFile` | `downloadFile(fileId, { signal? }?)` | `Promise<Uint8Array>` |
+| `start`, `pause`, `sync`, `archive` | `start(sourcePid, { signal? }?)` and the same for the others | `Promise<Source>` |
+| `waitSynced` | `waitSynced(sourcePid, { timeout?, interval?, signal? }?)` | `Promise<Source>` (`synced`) |
+
+`files` is one `SourceFileInput` or an array of them: a `File` (its `name` is
+used), or a `NamedFile` `{ filename, content, mimetype? }` whose `content` is a
+`Blob`, `ArrayBuffer`, or `Uint8Array`. In Node, wrap a file's bytes in a
+`File`: `new File([await readFile(path)], name)`.
+
+| Case | Result |
+| ---- | ------ |
+| A plain string, no file, two files with the same name, a name that is not 1 to 255 characters or contains `/`, or more than 50 files | [`InvalidParams`](#errors) before any upload |
+| An unknown source, file, or `pid` | [`NotFoundError`](#errors) |
+| `start`, `sync`, or `archive` from a status that does not allow it | [`APIError`](#errors) (400), `detail` `Operation is not valid` |
+| The sync ends in another status than `synced` | [`SourceSyncFailed`](#errors) (carries `.source`) |
+| The sync is still running after `timeout` | [`SourceSyncTimeout`](#errors) (carries `.source`, or `null` before the first read) |
+| A storage refusal, or too many drives | [`APIError`](#errors) |
+| `listFiles` on a connected source (Google Drive, SharePoint), or an unusable upload permission | [`SDKError`](#errors) |
+
+- `create` makes a drive, uploads each file through a presigned URL, then
+  creates a private drag-and-drop source over it. Files upload one after the
+  other. If a step fails, the source is not created.
+- `source.pid` (a string) goes to every method here. `source.id` (a number)
+  goes to `indexedDocuments.sourceIds` in `threadCapabilities`, `messageScope`,
+  or an agent's `capabilities`.
+- `list()` returns the organization's sources and the ones the key created,
+  archived ones included.
+- `get(pid)` reads the list and picks, so it costs a `list()`.
+- `addFiles` and `removeFile` request a sync when the source accepts one
+  (`synced`, `error`, `out_of_sync`, `daily_quota_reached`). The 50-file cap
+  counts the files already in the source.
+- `downloadFile` fetches a presigned URL valid 5 minutes, then the bytes. The
+  whole file is held in memory.
+- `waitSynced` reads the source every `interval` (default `5000`) milliseconds,
+  for at most `timeout` (default `600000`, 10 minutes) milliseconds. A timeout
+  does not stop the sync: wait again to keep following it.
+- `archive` is terminal. It removes the indexed documents and the files, and the
+  source stays listed with `status === 'archived'`.
+- Only drag-and-drop sources can be created with a key.
+
+Server limits: 100 drives per user (each `create` makes one, and a drive cannot
+be deleted) and 50 files per source. A chat over a source must run with the key
+owner's `userId`. See
+[Sources](/guides/sources#chat-as-the-key-owner).
+
+### `client.documents`
+
+| Method | Signature | Returns |
+| ------ | --------- | ------- |
+| `get` | `get(documentId, { signal? }?)` | `Promise<DocumentMetadata>` |
+
+Resolves a composite document id, such as the one in a `<cite document_id="..."/>`
+tag. The id may contain `#`: the SDK URL-encodes it. An empty id throws
+[`InvalidParams`](#errors) before any request. An unknown id throws
+[`NotFoundError`](#errors). There is no call that lists documents.
+
+## The run handle
+
+Returned by `chat.start` (`StartedChat`) and by `chat.send` / `chat.stream`
+(`AssistantRun`). A run is the assistant's in-progress reply. Its stream is
+**single-use**. Iterate it **or** await its result (the result is cached either
+way).
+
+| Member | Description |
+| ------ | ----------- |
+| `for await (const event of run)` | yields [progress events](#streamed-events) only; the final message is captured internally |
+| `await run.result()` | drains the stream and returns the final `Message` |
+| `await run.text()` | the final reply string (`result().content`) |
+| `await run.questions()` | the agent's clarifying `Question`s, or `[]` |
+| `run.messageId` | the assistant message id (a UUID string) |
+| `run.thread` | the `Thread` (`StartedChat` only; `undefined` on a bare `AssistantRun`) |
+| `run.lastEventId` | the id of the last event received, to [resume a dropped stream](#resume-a-dropped-stream) |
+| `await run.close()` | release the stream early. It does **not** stop the message: see [One message at a time](#one-message-at-a-time) |
+
+| You did | Then `run.result()` / `run.text()` |
+| ------- | ---------------------------------- |
+| Nothing yet | Drains the stream and returns the final message |
+| Iterated to the end | Returns the cached final message |
+| Left the loop early (`break`, `return`, `close()`) | Throws `SDKError`: the final message was never received |
+| Iterated a second time | Throws `SDKError` on the first pull |
+
+<Warning>
+  A run throws [`StreamInterrupted`](#errors) (carrying `.partial`, the message
+  as far as it got) if the server shuts down mid-stream. A dropped connection
+  throws `APIConnectionError`. A run that ends with `status: 'failed'` does not
+  throw: check `status` on `run.result()`.
+</Warning>
+
+### One message at a time
+
+A thread processes **one message at a time**. A message stays `pending` until
+you read its events to the end, or cancel it. If you start a message and walk
+away, the thread stays busy, and the next `chat.send` throws
+[`APIError`](#errors) (400, `Cannot process multiple messages at the same
+time`).
+
+| What happened to the previous message | Next `chat.send` |
+| ------------------------------------- | ---------------- |
+| You read it to the end: `await run.result()`, `await run.text()`, or a `for await` that ran to the end | Works |
+| You cancelled it with [`chat.cancel`](#stop-a-message), even without reading its events | Works |
+| You dropped the run, or left the `for await` early, and did not cancel | **400**, the message is still pending |
+| You called `run.close()`, aborted its `signal`, or called `client.close()`, and did not cancel | **400**: closing the stream does not stop the message |
+
+Leaving a stream early only releases the connection. The message keeps running
+on the server. To stop reading and free the thread, cancel:
+
+```ts
+for await (const event of run) {
+    if (userClickedStop()) {
+        await client.chat.cancel(run.messageId)
+        break // closes the stream
+    }
+}
+```
+
+If you lost the run, or an earlier call left a message unread, free the thread
+by reading it. `message.live` tells you which messages are still pending:
+
+```ts
+const thread = await client.threads.get(threadId)
+for (const message of thread.messages) {
+    if (message.live) {
+        await client.chat.stream(message.id).result() // drains it, or cancel it
+    }
+}
+
+const reply = await client.chat.send(threadId, { agentId: AGENT_ID, message: 'Next question' })
+```
+
+`thread.live` is `true` while any message is pending. A 400 from `chat.send`
+that says `Cannot process multiple messages at the same time` always means this.
+It is not the concurrency rate limit (`RateLimitError` with scope
+`'concurrency'`, HTTP 429), which counts simultaneous chats across all threads.
+
+### Resume a dropped stream
+
+If the connection drops mid-run, the stream throws `APIConnectionError`. The run
+is still in progress on the server. `chat.stream(messageId, { lastEventId })`
+opens a new stream that starts after that event:
+
+```ts
+import { APIConnectionError } from '@cominty-ai/sdk'
+
+let lastEventId: string | undefined
+for (let attempt = 1; ; attempt++) {
+    const run = client.chat.stream(messageId, { lastEventId })
+    try {
+        for await (const event of run) console.log(event.name)
+        console.log(await run.text())
+        break
+    } catch (error) {
+        if (!(error instanceof APIConnectionError) || attempt >= 5) throw error
+        lastEventId = run.lastEventId ?? lastEventId
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
+    }
+}
+```
+
+`chat.stream` makes no request until the run is consumed. It is also how you
+attach to a run from another process: store `run.messageId`, then open the
+stream wherever you need it.
+
+### Relay progress to a browser
+
+The SDK is server-side only, because it holds your API key. To show live
+progress in a web app, read the run on your server and relay the events, for
+example as server-sent events:
+
+```ts
+// Any runtime with web-standard Request/Response: Next.js, Hono, Bun, Deno...
+export async function POST(request: Request): Promise<Response> {
+    const { message } = await request.json()
+    const run = await client.chat.start({ agentId: AGENT_ID, message, signal: request.signal })
+
+    const encoder = new TextEncoder()
+    const send = (event: string, data: unknown) =>
+        encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+
+    const body = new ReadableStream<Uint8Array>({
+        async start(controller) {
+            try {
+                for await (const event of run) controller.enqueue(send('progress', event))
+                controller.enqueue(send('done', await run.result()))
+            } catch (error) {
+                controller.enqueue(send('error', { message: (error as Error).message }))
+            } finally {
+                controller.close()
+            }
+        },
+        cancel: () => run.close(),
+    })
+
+    return new Response(body, {
+        headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
+    })
+}
+```
+
+Relay only what your UI needs. Events can include tool names, model names, and
+cost, which you may not want to show to end users. If the browser disconnects,
+the message keeps running: cancel it if your UI means "stop".
+
+## Data types
+
+All response types are plain objects with `snake_case` fields. The API may
+return fields not listed here, and they are kept on the object, so the types are
+forward-compatible. Timestamps are ISO-8601 strings.
+
+<ResponseField name="Thread" type="ThreadSummary + messages">
+  Everything in `ThreadSummary`, plus `messages: Message[]`.
+</ResponseField>
+
+<ResponseField name="ThreadSummary" type="object">
+  `id: string` · `name: string` · `created_at: string` · `live: boolean` ·
+  `agent: { id: string; name: string }` · `starred: boolean` ·
+  `project_id?: string | null`
+</ResponseField>
+
+<ResponseField name="Message" type="object">
+  `id: string` · `thread_id: string` · `role: 'user' | 'assistant'` ·
+  `content: string` · `questions: Question[] | null` · `live: boolean` ·
+  `status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'` ·
+  `events: Record<string, unknown>[] | null` (the raw stored log, not the typed
+  stream events) · `structured_output: Record<string, unknown> | null` ·
+  `files: ConversationFile[]`
+</ResponseField>
+
+<ResponseField name="Question" type="object">
+  `prompt: string` · `options: string[]`. Answer with one of the options, or any
+  free text, through `chat.send`.
+</ResponseField>
+
+<ResponseField name="ConversationFile" type="object">
+  `id` · `name` · `size` (bytes) · `mimetype` · `origin` (`'user'` | `'agent'`) ·
+  `share_links: ShareLink[]` · `url`
+</ResponseField>
+
+<ResponseField name="ShareLink" type="object">
+  `id` · `created_at` · `last_accessed_at` · `access_count` · `revoked` ·
+  `expires_at` · `expired` · `protected` · `url`
+</ResponseField>
+
+<ResponseField name="MemoryFile" type="object">
+  Returned by `memory.create`, `memory.get`, and `memory.update`. `path: string` ·
+  `namespace: string` · `purpose: string` · `content: string` ·
+  `created_at: string` · `updated_at: string` · `version: string` (opaque, see
+  [`client.memory`](#client-memory))
+</ResponseField>
+
+<ResponseField name="MemoryFileSummary" type="object">
+  Returned by `memory.list`. Everything in `MemoryFile` except `content`.
+</ResponseField>
+
+<ResponseField name="McpServer" type="object">
+  Returned by `mcp.list`. `name: string` (the value for `connections`) ·
+  `title: string` · `description: string` · `is_enabled: boolean` ·
+  `origin: string` · `scope: string` · `requires_oauth_connect: boolean` ·
+  `connection_status?` · `icon_uri?` · `mcp_url?` · `owner_id?` ·
+  `created_at?` · `updated_at?`
+</ResponseField>
+
+<ResponseField name="AgentSummary" type="object">
+  Returned by `agents.list`. `id: string` · `name: string` ·
+  `description: string | null` · `capabilities: AgentCapabilities | null`
+  (camelCase, the shape you pass) · `managed: boolean` (`true` for built-in
+  agents) · `scope: Scope` · `owner: string` (the `userId` to chat with over the
+  key's sources) · `execution_options` and `memory_namespace` (legacy, use
+  `capabilities`).
+</ResponseField>
+
+<ResponseField name="AgentDetail" type="AgentSummary + details">
+  Returned by `agents.get`, `create`, `update`, and `setModels`. Everything in
+  `AgentSummary`, plus `instructions: string | null` ·
+  `allow_execution_options_override: boolean` ·
+  `models: LlmModel[]` (the chain, in failover order).
+</ResponseField>
+
+<ResponseField name="LlmModel" type="object">
+  Returned by `agents.listModels`. `id: string` · `name: string`
+</ResponseField>
+
+<ResponseField name="Skill" type="object">
+  Returned by `skills.list`, `create`, `update`, and `uploadVersion`.
+  `id: string` (the value for `skills.include`) · `display_name: string` ·
+  `active: boolean` · `scope: Scope | null` (`null` for a built-in skill) ·
+  `source: 'cominty' | 'custom'` · `frontmatter` (`name`, `description`,
+  `license`, `compatibility`, `metadata`, `allowed_tools`, parsed by the server
+  from `SKILL.md`) · `created_at: string` · `updated_at: string`
+</ResponseField>
+
+<ResponseField name="Source" type="object">
+  Returned by the `client.sources` methods that return a source. `id: number`
+  (for `sourceIds`) · `pid: string` (for every `client.sources` method) ·
+  `name: string` · `scope: Scope` · `created_by: string` ·
+  `store: 'draganddrop' | 'googledrive' | 'sharepoint'` ·
+  `status: SourceStatus` · `size: number` · `embedded_size: number` ·
+  `documents_synced: number` · `documents_failed: number` ·
+  `oversized_documents: number` · `documents_embedded: number` ·
+  `last_synced_at: string | null` · `archived_at: string | null` ·
+  `created_at: string` · `config` (`values.drive_id` names the drive behind the
+  source)
+</ResponseField>
+
+<ResponseField name="SourceFile" type="object">
+  A file of a source. `id: string` · `name: string` · `size: number` ·
+  `mimetype: string` · `created_at: string` · `updated_at: string`
+</ResponseField>
+
+<ResponseField name="DocumentMetadata" type="object">
+  Returned by `documents.get`. `document_id: string` · `source_id: number` ·
+  `source_pid: string` · `source_type: SourceStore` · `document_name: string` ·
+  `document_uri: string | null` · `document_extension: string` ·
+  `document_mime_type: string`
+</ResponseField>
+
+<ResponseField name="Scope" type="string union">
+  `'private'` (the key owner only) or `'organization'` (every member). Used by
+  agents, skills, and sources.
+</ResponseField>
+
+<ResponseField name="SourceStatus" type="string union">
+  `pending` · `syncing` · `synced` · `error` · `out_of_sync` · `cancelling` ·
+  `pausing` · `paused` · `archived` · `disconnected` · `inoperative_connection` ·
+  `expired_connection` · `invalid_configuration` · `daily_quota_reached`
+</ResponseField>
+
+## Capabilities
+
+Concepts and recipes: [Capabilities](/guides/capabilities) and
+[Use cases](/guides/capabilities-use-cases). Capabilities and scopes are plain
+objects with camelCase keys. The SDK sends them in snake_case.
+
+```ts
+import { ALL, type AgentCapabilities, type MessageScope } from '@cominty-ai/sdk'
+
+const threadCapabilities: AgentCapabilities = {
+    web: { activation: 'always' },
+    indexedDocuments: { activation: 'always', sourceIds: [101] }, // documentIds: ALL
+    mcp: { activation: 'on_request', connections: ALL },
+    memory: { activation: 'always', namespace: 'support-bot' },
+}
+const messageScope: MessageScope = { mcp: { enabled: true, connections: ['linear'] } }
+```
+
+| Argument | On | Type | Lasts |
+| -------- | -- | ---- | ----- |
+| `threadCapabilities` | `chat.start` only | `AgentCapabilities` | The whole thread. Frozen at start. |
+| `messageScope` | `chat.start` and `chat.send` | `MessageScope` | One message |
+
+### `AgentCapabilities`
+
+Every key is optional. A key you do not pass keeps the agent's value. A key you
+pass replaces the agent's value entirely.
+
+| Key | `activation` | Filters (default `ALL`) |
+| --- | ------------ | ----------------------- |
+| `web` | `always`, `on_request`, `never` | - |
+| `indexedDocuments` | `always`, `on_request`, `never` | `sourceIds: number[]`, `documentIds: string[]` |
+| `mcp` | `always`, `on_request`, `never` | `connections: string[]` |
+| `skills` | `always`, `never` | `include: string[]` |
+| `imageGeneration` | `always`, `on_request`, `never` | - |
+| `videoGeneration` | `always`, `on_request`, `never` | - |
+| `musicGeneration` | `always`, `on_request`, `never` | - |
+| `memory` | `always`, `never` | `namespace: string` (see [Memory](#memory)) |
+
+`activation` is required on every capability. There are no shortcuts:
+`web: true` and `web: 'never'` throw [`InvalidParams`](#errors).
+
+### `MessageScope`
+
+Every key is optional.
+
+| Key | Filters (default `ALL`) |
+| --- | ----------------------- |
+| `web` | - |
+| `indexedDocuments` | `sourceIds`, `documentIds` |
+| `mcp` | `connections` |
+| `imageGeneration` | - |
+| `videoGeneration` | - |
+| `musicGeneration` | - |
+
+`enabled: boolean` is required on every scope. There is no scope for `skills` or
+`memory`. A scope can turn a capability on or off, or narrow a filter. It can
+never widen what the thread allows.
+
+### `ALL` and filters
+
+`ALL` is the string `'*'`: no restriction. It is the default of every filter, so
+passing it only makes the intent explicit. A filter is either `ALL` or a
+non-empty array. `sourceIds` are numbers, the other ids strings.
+
+| Value | Result |
+| ----- | ------ |
+| Left out, or `ALL` | No restriction |
+| A non-empty array | Allowlist |
+| `null`, `[]`, or `'*'` inside an array | [`InvalidParams`](#errors) before any request |
+| Any filter with `activation: 'never'` or `enabled: false` | [`InvalidParams`](#errors) before any request |
+| An unknown key, such as `source_ids` | [`InvalidParams`](#errors), with a hint to the camelCase name (`sourceIds`) |
+
+### Memory
+
+`memory: { activation: 'always', namespace }` attaches the thread to a memory
+bag. The `namespace` is required and is 1 to 128 characters.
+`memory: { activation: 'never' }` runs the thread without memory and takes no
+namespace. Without a `memory` entry, the thread uses the agent's namespace, or
+runs without memory if the agent has none. The bag is frozen for the thread: a
+follow-up cannot change it. See [Memory namespaces](/guides/memory-namespaces).
+
+### Validation errors
+
+Capabilities are plain objects, so the SDK checks them when you call
+`chat.start` or `chat.send`, before any request. Every problem is named in one
+[`InvalidParams`](#errors). The server answers 422 ([`APIError`](#errors)) when
+a message widens an allowlist, targets a capability the thread does not have, or
+sets `enabled: false` on an `on_request` capability. See
+[Troubleshooting](/guides/capabilities-troubleshooting#where-an-error-comes-from).
+
+## Streamed events
+
+Events are a discriminated union (`AnyEvent`) that you narrow on `event.name`.
+Call `isKnownEvent(event)` first: it skips event types this SDK version does not
+know, and lets TypeScript type `event.data` in each branch.
+
+Every event has `id: string`, `correlation_id: number`, `at: string`,
+`status: 'running' | 'success' | 'failed' | 'error'`, and a `name`. A step emits
+a `running` event, then one with a final status, both with the same
+`correlation_id`. Use `isTerminalStatus(status)` and `isFailureStatus(status)`
+rather than comparing strings.
+
+| Type | `name` | Payload (`event.data`) |
+| ---- | ------ | ---------------------- |
+| `WaitingForStartEvent` | `waiting_for_start` | - |
+| `SettingUpSandboxEvent` | `setting_up_sandbox` | - |
+| `UploadingFileEvent` | `uploading_file` | `filename` |
+| `LlmEvent` | `llm` | `description`, `model`, `error?` |
+| `IntermediaryUpdateEvent` | `intermediary_update` | `message` |
+| `ToolCallEvent` | `tool_call` | `name`, `description`, `message?`, `error?` |
+| `ResultEvent` | `result` | `reply`, `files`, `questions?`, `metadata?`, `cost` |
+| `UnknownEvent` | *(any new name)* | `data` (forward-compatible) |
+
+- The `result` event is not the end of the stream. More events can follow it.
+  The stream ends when the final message arrives, which is when your `for await`
+  loop exits.
+- `event.data.cost` holds `total`, `input_cost`, and `output_cost` as decimal
+  **strings**, plus token counts. Keep them as strings, or use a decimal
+  library: converting to `number` loses precision when you add them up.
+
+## Errors
+
+Every error the SDK throws while talking to the API extends `ComintyError`. All
+classes are exported, and `error.name` is the class name.
+
+```text
+ComintyError
+├── APIError              # HTTP 4xx/5xx. .status, .detail, .body, .headers
+│   ├── AuthError         # 401
+│   ├── PermissionError   # 403
+│   ├── NotFoundError     # 404
+│   ├── ConflictError     # 409
+│   ├── RateLimitError    # 429
+│   └── ServerError       # 5xx
+├── APIConnectionError    # network error / timeout (no response). .cause
+├── StreamInterrupted     # server shut down mid-stream. .partial: Message
+├── SourceSyncFailed      # a source did not reach "synced". .source: Source
+├── SourceSyncTimeout     # waitSynced ran out of time. .source: Source | null
+├── InvalidParams         # client-side validation failed. .errors: InvalidParam[]
+└── SDKError              # unexpected state, or a run consumed twice
+```
+
+Two kinds of error are not a `ComintyError`:
+
+- A configuration mistake in `new Cominty()` throws a plain `Error`.
+- Aborting your own `AbortSignal` throws the standard `AbortError`.
+
+`InvalidParams.errors` lists every problem at once. Each entry has `param`,
+`message`, and, where useful, the offending `input`.
+
+| Call | Can throw |
+| ---- | --------- |
+| `new Cominty()` | `Error` (configuration) |
+| `chat.start`, `chat.send` | `InvalidParams`, `APIError`, `APIConnectionError` |
+| `chat.stream` | Nothing: it makes no request until the run is consumed |
+| Iterating a run, `run.result()`, `run.text()`, `run.questions()` | `APIError`, `APIConnectionError`, `StreamInterrupted`, `SDKError` |
+| `threads.*` | `APIError`, `APIConnectionError` |
+| `memory.*`, `agents.*`, `skills.*`, `documents.get`, `mcp.list` | `InvalidParams`, `APIError`, `APIConnectionError` |
+| `sources.*` | `InvalidParams`, `APIError`, `APIConnectionError`, `SDKError` |
+| `sources.waitSynced` | The above, plus `SourceSyncFailed` and `SourceSyncTimeout` |
+
+The SDK never retries on its own. Sending a message is not idempotent: retrying
+a `chat.start` that reached the server would start a second run. Retry a
+`ServerError` or a `RateLimitError` with scope `'concurrency'` after a delay.
+Re-read the file after a `ConflictError` on `memory.update`. Resume a stream
+after an `APIConnectionError` while streaming. Fix the request for an
+`AuthError`, `PermissionError`, `NotFoundError`, or `InvalidParams`.
+
+### `RateLimitError`
+
+Turns the terse `429` into a clear, actionable `message` and exposes:
+
+- `scope` → `'organization'` | `'user'` | `'concurrency'` | `null`
+- `retryAfter` → seconds (from the `Retry-After` header), or `null`
+- `resetAt` → a `Date` (from `reset_at` / `X-RateLimit-Reset`), or `null`
+
+`'concurrency'` is transient: retry once an in-flight run finishes.
+`'organization'` and `'user'` mean a quota is exhausted, and an admin must raise
+the plan's limit.
+
+Example messages:
+
+- *Organization rate limit reached: your organization's total request quota is
+  exhausted. Ask an organization admin to raise your plan's limit.*
+- *User rate limit reached: your user request quota is exhausted. Ask an
+  organization admin to raise your plan's limit.*
+- *Too many concurrent requests: your plan's limit on simultaneous chat sessions
+  is reached. Wait for an in-flight request to finish and retry, or raise the
+  limit. Ask an organization admin to raise your plan's limit.*

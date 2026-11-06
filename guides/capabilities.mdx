@@ -21,7 +21,8 @@ focuses one message.** A scope never adds a tool that the thread does not have.
 
 This guide explains the model. To see it in action, start with the
 [use cases](/guides/capabilities-use-cases). It works the same with the
-[Python SDK](/sdk/reference#capabilities) and the
+[Python SDK](/sdk/reference#capabilities), the
+[JavaScript SDK](/js-sdk/reference#capabilities), and the
 [HTTP API](/api-reference#capabilities).
 
 ## The capabilities
@@ -163,6 +164,20 @@ explicit object. There are no shortcuts such as `web=True` or
     print(await run.text())  # read the reply before you send the next message
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: 'Summarize the open tickets',
+        threadCapabilities: {
+            web: { activation: 'never' },
+            mcp: { activation: 'always', connections: ['linear'] },
+            imageGeneration: { activation: 'on_request' },
+        },
+    })
+    console.log(await run.text()) // read the reply before you send the next message
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X POST "https://ds.cominty.com/chat" \
@@ -184,13 +199,16 @@ explicit object. There are no shortcuts such as `web=True` or
   </Tab>
 </Tabs>
 
-The follow-up `chat.send` does not accept `thread_capabilities`. To change the
-thread's capabilities, start a new thread.
+The follow-up `chat.send` does not accept `thread_capabilities` (in the
+JavaScript SDK, `threadCapabilities` on `chat.send` throws `InvalidParams`). To
+change the thread's capabilities, start a new thread.
 
 <Note>
   A thread handles one message at a time. Read the reply to the end (or cancel
   the message) before you send the next one, or `chat.send` returns a 400. See
-  [One message at a time](/sdk/reference#one-message-at-a-time).
+  One message at a time for the
+  [Python SDK](/sdk/reference#one-message-at-a-time) and the
+  [JavaScript SDK](/js-sdk/reference#one-message-at-a-time).
 </Note>
 
 ## Change one message
@@ -209,6 +227,15 @@ this message. Each scope has a required `enabled`.
         message="Answer from what you already know.",
         message_scope=MessageScope(web=WebScope(enabled=False)),
     )
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const reply = await client.chat.send(run.thread.id, {
+        agentId: AGENT_ID,
+        message: 'Answer from what you already know.',
+        messageScope: { web: { enabled: false } },
+    })
     ```
   </Tab>
   <Tab title="HTTP">
@@ -253,8 +280,8 @@ Some capabilities can be limited to a list of ids. The filter names are
 - Otherwise a filter is a non-empty list.
 - On a message, a filter can only **narrow** the thread's list. It must be a
   subset of it.
-- `None`, an empty list, and `"*"` inside a list are invalid. The SDK raises
-  `InvalidParams` before sending anything.
+- `None` (`null` in JavaScript), an empty list, and `"*"` inside a list are
+  invalid. Both SDKs raise `InvalidParams` before sending anything.
 - A filter on `never` or on `enabled=False` is invalid too. Those states take
   no filter.
 
@@ -375,6 +402,24 @@ does. Send both, so the agent knows where to look and cannot look elsewhere.
         ),
     )
     print(await run.text())
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const focus =
+        '<scope type="document"><include_sources>' +
+        '<source id="2292" name="Board decks"/>' +
+        '</include_sources></scope>'
+
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: `${focus} In these documents, how does my startup scale?`,
+        messageScope: {
+            web: { enabled: false },
+            indexedDocuments: { enabled: true, sourceIds: [2292] },
+        },
+    })
+    console.log(await run.text())
     ```
   </Tab>
   <Tab title="HTTP">
