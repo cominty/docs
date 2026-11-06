@@ -3,13 +3,13 @@ title: "Capabilities troubleshooting and migration"
 description: "Move from disabled_tools and memory_namespace to capabilities, and understand each error"
 ---
 
-This page covers two things: how to move your code to capabilities (SDK 1.0.0),
-and what each error means when a call fails.
+This page covers two things: how to move your code to capabilities (Python SDK
+1.0.0, JavaScript SDK 0.3.0), and what each error means when a call fails.
 
 ## Migrate from SDK 0.5.0
 
-SDK 1.0.0 removes four arguments of `chat.start` and `chat.send`. Their job is
-now done by `message_scope` and `thread_capabilities`.
+Python SDK 1.0.0 removes four arguments of `chat.start` and `chat.send`. Their
+job is now done by `message_scope` and `thread_capabilities`.
 
 | Removed | Replaced by |
 | ------- | ----------- |
@@ -89,6 +89,60 @@ await client.chat.start(
 )
 ```
 
+### The JavaScript SDK
+
+The JavaScript SDK added `messageScope` and `threadCapabilities` in 0.3.0. It
+still accepts the old arguments, but they are deprecated:
+
+| Deprecated argument | Replacement |
+| ------------------- | ----------- |
+| `disabledTools` on `start` and `send` | `messageScope` |
+| `sourceIds` on `start` and `send` | `messageScope.indexedDocuments.sourceIds` |
+| `documentIds` on `start` and `send` | `messageScope.indexedDocuments.documentIds` |
+| `memoryNamespace` on `start` | `threadCapabilities.memory` |
+
+Do not mix them. `messageScope` with `disabledTools`, `sourceIds`, or
+`documentIds` throws `InvalidParams` before any request. So does
+`memoryNamespace` with `threadCapabilities.memory`.
+
+```ts
+// before
+await client.chat.start({
+    agentId: AGENT_ID,
+    message: 'Summarize the board deck',
+    disabledTools: ['web'],
+    sourceIds: [101],
+})
+
+// now
+await client.chat.start({
+    agentId: AGENT_ID,
+    message: 'Summarize the board deck',
+    messageScope: {
+        web: { enabled: false },
+        indexedDocuments: { enabled: true, sourceIds: [101] },
+    },
+})
+```
+
+```ts
+// before
+await client.chat.start({
+    agentId: AGENT_ID,
+    message: 'Use the tone file.',
+    memoryNamespace: 'support-bot',
+})
+
+// now
+await client.chat.start({
+    agentId: AGENT_ID,
+    message: 'Use the tone file.',
+    threadCapabilities: {
+        memory: { activation: 'always', namespace: 'support-bot' },
+    },
+})
+```
+
 ### The HTTP API
 
 The HTTP API still accepts the old fields, but they are deprecated and will be
@@ -123,8 +177,8 @@ There are two kinds of errors, and they happen at different times.
 
 ### Local `InvalidParams`
 
-The SDK checks every capability and scope object when you create it. Nothing is
-sent. The message names the argument and the reason.
+The Python SDK checks every capability and scope object when you create it.
+Nothing is sent. The message names the argument and the reason.
 
 | You wrote | Message |
 | --------- | ------- |
@@ -140,17 +194,44 @@ sent. The message names the argument and the reason.
 | `AgentCapabilities(web=True)` | `Input should be a valid dictionary or instance of WebCapability` |
 | `MessageScope(web=False)` | `Input should be a valid dictionary or instance of WebScope` |
 
+The JavaScript SDK runs the same checks when you call `chat.start` or
+`chat.send`, since its capabilities are plain objects. Its messages use its own
+wording and camelCase names, for example
+`threadCapabilities.mcp.connections`. One `InvalidParams` lists every problem.
+
 Catch it like any other SDK error:
 
-```python
-from cominty_sdk import InvalidParams, McpCapability
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import InvalidParams, McpCapability
 
-try:
-    McpCapability(activation="always", connections=[])
-except InvalidParams as exc:
-    for problem in exc.errors:
-        print(problem["param"], problem["message"])
-```
+    try:
+        McpCapability(activation="always", connections=[])
+    except InvalidParams as exc:
+        for problem in exc.errors:
+            print(problem["param"], problem["message"])
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { InvalidParams } from '@cominty-ai/sdk'
+
+    try {
+        await client.chat.start({
+            agentId: AGENT_ID,
+            message: 'hi',
+            threadCapabilities: { mcp: { activation: 'always', connections: [] } },
+        })
+    } catch (error) {
+        if (!(error instanceof InvalidParams)) throw error
+        for (const problem of error.errors) {
+            console.log(problem.param, problem.message)
+        }
+    }
+    ```
+  </Tab>
+</Tabs>
 
 ### Server-side 422 `APIError`
 
@@ -163,19 +244,39 @@ only narrow them. These three cases are refused:
 | You target a capability the thread does not have | `scope.<name> is set on the message, but the thread AgentCapabilities does not include it (omitted, or activation=never). Add <name> to AgentCapabilities with activation always or on_request first.` `enabled=False` on such a capability returns the same error. |
 | You turn off a capability that is already off | `scope.<name>.enabled is false, but <name> already defaults to off (activation=on_request). Omit the key, or set enabled to true to use it this message.` |
 
-```python
-from cominty_sdk import APIError
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import APIError
 
-try:
-    await client.chat.send(
-        thread_id,
-        agent_id=AGENT_ID,
-        message="Search another source.",
-        message_scope=message_scope,
-    )
-except APIError as exc:
-    print(exc.status_code, exc.detail)
-```
+    try:
+        await client.chat.send(
+            thread_id,
+            agent_id=AGENT_ID,
+            message="Search another source.",
+            message_scope=message_scope,
+        )
+    except APIError as exc:
+        print(exc.status_code, exc.detail)
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { APIError } from '@cominty-ai/sdk'
+
+    try {
+        await client.chat.send(threadId, {
+            agentId: AGENT_ID,
+            message: 'Search another source.',
+            messageScope,
+        })
+    } catch (error) {
+        if (!(error instanceof APIError)) throw error
+        console.log(error.status, error.detail)
+    }
+    ```
+  </Tab>
+</Tabs>
 
 The error names `scope.<name>`, even if you sent the older `source_ids` field.
 
@@ -199,7 +300,9 @@ await client.chat.send(
 )
 ```
 
-On HTTP, `options.capabilities` on `POST /chat/{thread_id}` returns a 422.
+In the JavaScript SDK, `threadCapabilities` on `chat.send` throws
+`InvalidParams` before any request. On HTTP, `options.capabilities` on
+`POST /chat/{thread_id}` returns a 422.
 
 ## Common mistakes
 
@@ -212,14 +315,18 @@ new thread.
 ### Using old and new fields together
 
 On HTTP, `message.scope` together with `disabled_tools`, `source_ids` or
-`document_ids` fails with a 422. In the SDK, the old arguments no longer exist.
-Move everything to the new ones.
+`document_ids` fails with a 422. In the Python SDK, the old arguments no longer
+exist. The JavaScript SDK still accepts them, deprecated, but throws
+`InvalidParams` when you mix them with the new ones. Move everything to the new
+ones.
 
 ### Passing `True`, `False`, or a string
 
 There are no shortcuts. `web=True`, `web="never"`, and `MessageScope(web=False)`
 all raise `InvalidParams`. Use `WebCapability(activation="never")` and
-`WebScope(enabled=False)`.
+`WebScope(enabled=False)`. In the JavaScript SDK, `web: true` and
+`web: 'never'` throw `InvalidParams` too. Use `{ activation: 'never' }` and
+`{ enabled: false }`.
 
 ### Losing the agent's `source_ids`
 

@@ -4,7 +4,7 @@ description: "What Chat, Hive, and Planner can do by default, and which one to p
 ---
 
 Every organization has three built-in agents, ready to use without any setup.
-Pass their id as `agent_id`.
+Pass their id as `agent_id` (`agentId` in JavaScript).
 
 | Agent | `agent_id` | Pick it to |
 | ----- | ---------- | ---------- |
@@ -37,21 +37,37 @@ with no filter. Nothing is `on_request` by default.
 | `memory` | Off | No namespace, so no memory until you set one |
 
 To change a default for one thread, pass that capability in
-`thread_capabilities`. For example, to search the web only on the messages that
-ask for it:
+`thread_capabilities` (`threadCapabilities` in JavaScript). For example, to
+search the web only on the messages that ask for it:
 
-```python
-from cominty_sdk import AgentCapabilities, WebCapability
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import AgentCapabilities, WebCapability
 
-run = await client.chat.start(
-    agent_id="__cominty_agents::agent.hive",
-    message="Summarize our onboarding process.",
-    thread_capabilities=AgentCapabilities(
-        web=WebCapability(activation="on_request"),
-    ),
-)
-print(await run.text())
-```
+    run = await client.chat.start(
+        agent_id="__cominty_agents::agent.hive",
+        message="Summarize our onboarding process.",
+        thread_capabilities=AgentCapabilities(
+            web=WebCapability(activation="on_request"),
+        ),
+    )
+    print(await run.text())
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: '__cominty_agents::agent.hive',
+        message: 'Summarize our onboarding process.',
+        threadCapabilities: {
+            web: { activation: 'on_request' },
+        },
+    })
+    console.log(await run.text())
+    ```
+  </Tab>
+</Tabs>
 
 See [Override an agent for one thread](/guides/capabilities#override-an-agent-for-one-thread)
 for the rules, and [Memory](/guides/capabilities#memory) to give a thread a
@@ -65,8 +81,9 @@ Some features are not capabilities. You cannot turn them off.
   there, read the files you attach with `file_ids`, and create files. The files
   it shares with you come back in the reply's `files`.
 - **Clarifying questions.** When a request is unclear, the agent can end its
-  turn with questions instead of an answer. See
-  [Answer the agent's questions](/sdk/quickstart#answer-the-agents-questions).
+  turn with questions instead of an answer. To answer them, see the
+  [Python SDK](/sdk/quickstart#answer-questions-from-the-agent) or the
+  [JavaScript SDK](/js-sdk/quickstart#answer-questions-from-the-agent).
 - **Sub-agents.** The agent can hand a task to a general-purpose sub-agent.
   Each integration also runs as a sub-agent. See
   [Sub-agents have their own step counter](/guides/max-steps#sub-agents-have-their-own-step-counter).
@@ -103,30 +120,59 @@ and a sandbox, such as Hive.
 The plan is not the reply text. The reply text is Planner's message to you. The
 plan is in `structured_output["canvas"]` on the reply.
 
-`canvas` is `None` on a reply where Planner did not write or change the plan,
-for example when it only asked questions. Keep the last plan you received.
+`canvas` is `None` (`null` in JavaScript) on a reply where Planner did not
+write or change the plan, for example when it only asked questions. Keep the
+last plan you received.
 
-```python
-PLANNER_ID = "__cominty_agents::agent.planner"
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    PLANNER_ID = "__cominty_agents::agent.planner"
 
-run = await client.chat.start(
-    agent_id=PLANNER_ID,
-    message="Prepare a weekly watch on our three main competitors.",
-)
-reply = await run.result()
-
-if reply.questions:
-    for question in reply.questions:
-        print(question.prompt, question.options)
-    answer = await client.chat.send(
-        run.thread.id,
+    run = await client.chat.start(
         agent_id=PLANNER_ID,
-        message="Acme, Globex, and Initech. A report every Monday, in English.",
+        message="Prepare a weekly watch on our three main competitors.",
     )
-    reply = await answer.result()
+    reply = await run.result()
 
-plan = (reply.structured_output or {}).get("canvas")
-```
+    if reply.questions:
+        for question in reply.questions:
+            print(question.prompt, question.options)
+        answer = await client.chat.send(
+            run.thread.id,
+            agent_id=PLANNER_ID,
+            message="Acme, Globex, and Initech. A report every Monday, in English.",
+        )
+        reply = await answer.result()
+
+    plan = (reply.structured_output or {}).get("canvas")
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const PLANNER_ID = '__cominty_agents::agent.planner'
+
+    const run = await client.chat.start({
+        agentId: PLANNER_ID,
+        message: 'Prepare a weekly watch on our three main competitors.',
+    })
+    let reply = await run.result()
+
+    if (reply.questions?.length) {
+        for (const question of reply.questions) {
+            console.log(question.prompt, question.options)
+        }
+        const answer = await client.chat.send(run.thread.id, {
+            agentId: PLANNER_ID,
+            message: 'Acme, Globex, and Initech. A report every Monday, in English.',
+        })
+        reply = await answer.result()
+    }
+
+    const plan = reply.structured_output?.canvas as string | null | undefined
+    ```
+  </Tab>
+</Tabs>
 
 Over HTTP, the plan is in `structured_output.canvas` on the assistant message
 returned by `GET /chat/{thread_id}`. While you stream, it is in
@@ -137,14 +183,29 @@ returned by `GET /chat/{thread_id}`. While you stream, it is in
 Planner does not run the plan. Start a new thread with Chat or Hive, and send
 the plan as the message.
 
-```python
-if plan:
-    execution = await client.chat.start(
-        agent_id="__cominty_agents::agent.hive",
-        message=plan,
-    )
-    print(await execution.text())
-```
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    if plan:
+        execution = await client.chat.start(
+            agent_id="__cominty_agents::agent.hive",
+            message=plan,
+        )
+        print(await execution.text())
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    if (plan) {
+        const execution = await client.chat.start({
+            agentId: '__cominty_agents::agent.hive',
+            message: plan,
+        })
+        console.log(await execution.text())
+    }
+    ```
+  </Tab>
+</Tabs>
 
 On the platform, the plan opens in a side panel. Its **Chat** and **Hive**
 buttons open a new thread with the plan in the message box.

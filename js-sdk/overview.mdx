@@ -1,0 +1,190 @@
+---
+title: "JavaScript SDK"
+description: "Fully-typed TypeScript and JavaScript client for the Cominty chat API, with zero dependencies"
+---
+
+The Cominty JavaScript SDK wraps the chat API: start a conversation with an
+agent, stream its progress, continue the thread, manage threads, cancel or export
+a message, upload and download files, and store memory files an agent can read
+back later. It also configures what an admin configures in the console: list MCP
+integrations, create agents, upload skills, and index files as a source. Chat
+and threads are scoped to a single end user (`userId`) that you set once on the
+client. Memory files are scoped to a namespace you choose, shared by the API key.
+See [Memory namespaces](/guides/memory-namespaces).
+
+It is written in TypeScript and works from plain JavaScript too. It tracks the
+same API as the [Python SDK](/sdk/overview).
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/js-sdk/quickstart">
+    Task-by-task examples, most with a runnable script on GitHub.
+  </Card>
+  <Card title="Guides" icon="compass" href="/guides/capabilities">
+    Concepts behind capabilities, memory namespaces, and tool-round caps.
+  </Card>
+  <Card title="Use cases" icon="lightbulb" href="/guides/capabilities-use-cases">
+    Recipes that show what a capability changes.
+  </Card>
+  <Card title="Reference" icon="book" href="/js-sdk/reference">
+    Every resource, type, event, and error.
+  </Card>
+  <Card title="GitHub" icon="github" href="https://github.com/cominty/js-sdk">
+    Source, issues, and the full `examples/` directory.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference">
+    The HTTP endpoints the SDK calls, with a live playground.
+  </Card>
+</CardGroup>
+
+<Info>
+  **Package** `@cominty-ai/sdk` ([![npm](https://img.shields.io/npm/v/@cominty-ai/sdk.svg)](https://www.npmjs.com/package/@cominty-ai/sdk)) ·
+  **runtime** Node 20+, Bun, Deno, edge workers · **module** ESM only, types
+  included · **dependencies** none (native `fetch` and `ReadableStream`).
+</Info>
+
+## Install
+
+```bash
+npm install @cominty-ai/sdk     # or: pnpm add, yarn add, bun add
+```
+
+The resources for MCP, agents, skills, sources, and documents need version
+`0.4.0` or later. Capabilities, cancel, export, and file uploads need `0.3.0` or
+later.
+
+The package is ESM only. From CommonJS, `require('@cominty-ai/sdk')` works on
+Node 22.12 and later. On an older Node, use `await import('@cominty-ai/sdk')`.
+
+<Warning>
+  **Server-side only.** Your API key must never reach a browser: anyone who opens
+  the developer tools could read it. Building a client in a browser throws. Call
+  the SDK from your own backend, and relay the progress to your web app. See
+  [Relay progress to a browser](/js-sdk/reference#relay-progress-to-a-browser).
+</Warning>
+
+## Authenticate
+
+You need two credentials, both from [platform.cominty.ai](https://platform.cominty.ai):
+
+<Steps>
+  <Step title="Get your API key">
+    Open the **API keys** page and create a key. A key created now starts with
+    `sk-cmt-`. Copy it when you create it: it is shown once. Use the string
+    as is. Do not add a second `sk-cmt-` prefix. A key created before the
+    prefix existed has no `sk-cmt-` and still works.
+  </Step>
+  <Step title="Get your user id">
+    Open your avatar → **Profile**. It looks like
+    `user_31HPTBuBvX20xlQNAbvxjOxPbKB`.
+  </Step>
+  <Step title="Export both">
+    ```bash
+    export COMINTY_API_KEY="sk-cmt-..."
+    export COMINTY_USER_ID="user_..."
+    ```
+
+    With both set, `new Cominty()` picks them up automatically. No arguments
+    needed. On a runtime without `process.env`, such as an edge worker, pass
+    `apiToken` and `userId` explicitly.
+  </Step>
+</Steps>
+
+Pick an `agentId` from [platform.cominty.ai/agents](https://platform.cominty.ai/agents)
+(for example `__cominty_agents::agent.chat`). See
+[Built-in agents](/guides/agents) for what Chat, Hive, and Planner can do.
+
+## Your first call
+
+Save this as `first-call.mjs` and run `node first-call.mjs`:
+
+```ts
+import { Cominty } from '@cominty-ai/sdk'
+
+const client = new Cominty() // reads COMINTY_API_KEY + COMINTY_USER_ID
+
+const run = await client.chat.start({
+    agentId: '__cominty_agents::agent.chat',
+    message: 'What is Cominty?',
+})
+console.log(await run.text())
+```
+
+The same code runs as TypeScript. Every argument and every response is typed.
+
+## Core concepts
+
+<AccordionGroup>
+  <Accordion title="Client: one user per client" icon="user">
+    `Cominty` is bound to a single `userId`, validated when you build it. Chat
+    and thread requests send it. Memory requests do not. Resource methods never
+    take `userId`. The client holds no persistent connection, so closing it is
+    optional. `client.close()` aborts every request still in flight, and
+    `await using client = new Cominty()` calls it for you. See
+    [Client](/js-sdk/reference#client) for all settings.
+  </Accordion>
+  <Accordion title="Resources: chat, threads, memory, and configuration" icon="layers">
+    `client.chat` starts and continues conversations, streams progress,
+    cancels or exports a message, and uploads/downloads files.
+    `client.threads` lists, fetches, updates, and archives threads.
+    `client.memory` creates, lists, reads, updates, and deletes memory files in
+    a namespace you choose. See [Memory namespaces](/guides/memory-namespaces) and
+    [Resources](/js-sdk/reference#resources).
+
+    Five more resources configure the organization (SDK 0.4.0):
+    `client.mcp` lists MCP integrations, `client.agents` manages custom agents
+    and their models, `client.skills` manages skills, `client.sources` turns
+    files into an indexed source, and `client.documents` resolves a cited
+    document. See [Custom agents](/guides/custom-agents),
+    [Skills](/guides/skills), and [Sources](/guides/sources).
+  </Accordion>
+  <Accordion title="The API key: an admin of its organization" icon="key-round">
+    An API key acts as an admin of its own organization. What it creates is
+    owned by the user who created the key. It never sees another member's
+    private agents, skills, or drives, and a read by id throws `NotFoundError`.
+    See [What an API key can do](/guides/custom-agents#what-an-api-key-can-do).
+  </Accordion>
+  <Accordion title="Runs: the assistant's in-progress reply" icon="activity">
+    `chat.start` and `chat.send` return a **run**: the assistant's reply as it
+    is being produced. Iterate it with `for await` for live progress events, or
+    just `await run.text()` for the final answer. A run's stream is single-use.
+    See [The run handle](/js-sdk/reference#the-run-handle).
+  </Accordion>
+  <Accordion title="Capabilities: what the agent can use" icon="wrench">
+    Web search, document search, MCP connections, skills, media generation, and
+    memory are **capabilities**. They follow the agent's setup by default. Change
+    them for a whole thread with `threadCapabilities` (`chat.start` only), or for
+    one message with `messageScope`. Both are plain objects. See
+    [Capabilities](/guides/capabilities) and the
+    [reference](/js-sdk/reference#capabilities).
+    <Note>
+      `sourceIds`, `documentIds`, `disabledTools`, and `memoryNamespace` still
+      work but are deprecated. Use `messageScope` and `threadCapabilities.memory`
+      instead.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+## Configuration
+
+| Setting   | Option      | Env var            | Default                     |
+| --------- | ----------- | ------------------ | --------------------------- |
+| API key   | `apiToken`  | `COMINTY_API_KEY`  | required                    |
+| End user  | `userId`    | `COMINTY_USER_ID`  | required                    |
+| Base URL  | `baseUrl`   | `COMINTY_BASE_URL` | `https://ds.cominty.com`    |
+| Timeout   | `timeout`   | -                  | `60000` (milliseconds). Streams are exempt. |
+| Fetch     | `fetch`     | -                  | the global `fetch`          |
+| Browser   | `dangerouslyAllowBrowser` | -    | `false`                     |
+
+Resolution order is **explicit option → environment variable → default**. The
+SDK does **not** load `.env` files. Export the variables, or run
+`node --env-file=.env app.mjs`.
+
+```ts
+const client = new Cominty({ apiToken: 'sk-cmt-...', userId: 'user_...', timeout: 10_000 })
+```
+
+`apiToken` and `COMINTY_API_KEY` hold the key string exactly as the platform
+gave it to you, `sk-cmt-...` included. A missing key or user id, or a malformed
+user id, throws a plain `Error` when you build the client. A wrong or archived
+key comes back as a `403` and throws `PermissionError`. For the `detail` text of
+each case, see [Authentication errors](/api-reference#authentication-errors).

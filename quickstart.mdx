@@ -3,12 +3,17 @@ title: "Quickstart"
 description: "Go from zero to your first agent response in a few minutes"
 ---
 
-The fastest way to build on Cominty is the **Python SDK**, an async, fully-typed
-client for the chat API. This guide takes you from install to your first
-streamed agent response.
+The fastest way to build on Cominty is one of the two official SDKs. Both are
+fully typed clients for the same chat API:
+
+- the **Python SDK** (`cominty-sdk` on PyPI), async;
+- the **JavaScript SDK** (`@cominty-ai/sdk` on npm), written in TypeScript,
+  for Node, Bun, Deno, and edge workers.
+
+This guide takes you from install to your first agent response.
 
 <Note>
-  Prefer raw HTTP? Every call the SDK makes is a standard HTTPS/JSON request
+  Prefer raw HTTP? Every call the SDKs make is a standard HTTPS/JSON request
   against `https://ds.cominty.com`. Browse them in the
   [API reference](/api-reference), each with a live playground.
 </Note>
@@ -17,11 +22,23 @@ streamed agent response.
 
 <Steps>
   <Step title="Install the SDK">
-    ```bash
-    pip install cominty-sdk        # or: uv add cominty-sdk
-    ```
+    <Tabs>
+      <Tab title="Python SDK">
+        ```bash
+        pip install cominty-sdk        # or: uv add cominty-sdk
+        ```
 
-    Requires Python 3.9+.
+        Requires Python 3.9+.
+      </Tab>
+      <Tab title="JavaScript SDK">
+        ```bash
+        npm install @cominty-ai/sdk    # or: pnpm add, yarn add, bun add
+        ```
+
+        Requires Node 20+, or any server-side runtime with a global `fetch`.
+        The package is ESM only.
+      </Tab>
+    </Tabs>
   </Step>
   <Step title="Get your credentials">
     From [platform.cominty.ai](https://platform.cominty.ai), grab two things:
@@ -39,24 +56,46 @@ streamed agent response.
     ```
   </Step>
   <Step title="Send your first message">
-    Pick an `agent_id` from
+    Pick an agent id from
     [platform.cominty.ai/agents](https://platform.cominty.ai/agents) and ask it
     something.
 
-    ```python
-    import asyncio
-    from cominty_sdk import AsyncCominty
+    <Tabs>
+      <Tab title="Python SDK">
+        ```python
+        import asyncio
+        from cominty_sdk import AsyncCominty
 
-    async def main():
-        async with AsyncCominty() as client:      # reads COMINTY_API_KEY + COMINTY_USER_ID
-            run = await client.chat.start(
-                agent_id="__cominty_agents::agent.chat",
-                message="What is Cominty?",
-            )
-            print(await run.text())               # blocks until the agent finishes
+        async def main():
+            async with AsyncCominty() as client:      # reads COMINTY_API_KEY + COMINTY_USER_ID
+                run = await client.chat.start(
+                    agent_id="__cominty_agents::agent.chat",
+                    message="What is Cominty?",
+                )
+                print(await run.text())               # blocks until the agent finishes
 
-    asyncio.run(main())
-    ```
+        asyncio.run(main())
+        ```
+      </Tab>
+      <Tab title="JavaScript SDK">
+        Save this as `first-call.mjs` and run `node first-call.mjs`:
+
+        ```ts
+        import { Cominty } from '@cominty-ai/sdk'
+
+        const client = new Cominty() // reads COMINTY_API_KEY + COMINTY_USER_ID
+
+        const run = await client.chat.start({
+            agentId: '__cominty_agents::agent.chat',
+            message: 'What is Cominty?',
+        })
+        console.log(await run.text()) // waits until the agent finishes
+        ```
+
+        Run the SDK on your server only. Building a client in a browser throws,
+        so your API key never reaches a web page.
+      </Tab>
+    </Tabs>
 
     Printed a response? You're ready to build.
   </Step>
@@ -64,9 +103,11 @@ streamed agent response.
 
 <Tip>
   Next, stream the agent's progress, continue the conversation, and handle
-  errors. See the [SDK quickstart](/sdk/quickstart) for runnable examples, and
-  the [SDK reference](/sdk/reference) for the full surface. To control what the
-  agent can use, read [Capabilities](/guides/capabilities) and its
+  errors. See the [Python SDK quickstart](/sdk/quickstart) or the
+  [JavaScript SDK quickstart](/js-sdk/quickstart) for examples, and the
+  [Python](/sdk/reference) or [JavaScript](/js-sdk/reference) reference for
+  the full surface. To control what the agent can use, read
+  [Capabilities](/guides/capabilities) and its
   [use cases](/guides/capabilities-use-cases).
 </Tip>
 

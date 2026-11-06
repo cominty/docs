@@ -7,7 +7,8 @@ Agents can read and write **memory files** that outlive a conversation. A
 **namespace** is the bag those files live in. You choose its name.
 
 This guide explains the concept. It works the same with the
-[Python SDK](/sdk/quickstart#store-and-recall-a-memory-file) and the
+[Python SDK](/sdk/quickstart#store-and-recall-a-memory-file), the
+[JavaScript SDK](/js-sdk/quickstart#store-and-recall-a-memory-file), and the
 [HTTP API](/api-reference).
 
 ## How namespaces work
@@ -71,6 +72,20 @@ A memory file has a `path`, a `purpose`, and a `content`.
     fetched = await client.memory.get("tone.md", namespace="support-bot")
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const created = await client.memory.create({
+        path: 'tone.md',
+        namespace: 'support-bot',
+        purpose: 'writing style',
+        content: 'Keep it casual.',
+    })
+
+    const summaries = await client.memory.list({ namespace: 'support-bot' }) // no content
+    const names = await client.memory.listNamespaces()
+    let fetched = await client.memory.get('tone.md', { namespace: 'support-bot' })
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X POST "https://ds.cominty.com/memory" \
@@ -130,6 +145,30 @@ key a file by `(namespace, path)`. There is no pagination or sort option.
     await client.memory.delete("tone.md", namespace="support-bot")
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { ConflictError } from '@cominty-ai/sdk'
+
+    const updated = await client.memory.update('tone.md', {
+        namespace: 'support-bot',
+        version: fetched.version,
+        content: 'Keep it upbeat.',
+    })
+
+    try {
+        await client.memory.update('tone.md', {
+            namespace: 'support-bot',
+            version: fetched.version, // stale
+            content: 'this write is rejected',
+        })
+    } catch (error) {
+        if (!(error instanceof ConflictError)) throw error
+        fetched = await client.memory.get('tone.md', { namespace: 'support-bot' })
+    }
+
+    await client.memory.delete('tone.md', { namespace: 'support-bot' })
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X PUT "https://ds.cominty.com/memory/file?namespace=support-bot&path=tone.md&version=$VERSION" \
@@ -181,6 +220,21 @@ flowchart TD
     await client.chat.send(run.thread.id, agent_id="agt_1", message="Again, shorter.")
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: 'agt_1',
+        message: 'Use the tone file.',
+        threadCapabilities: {
+            memory: { activation: 'always', namespace: 'support-bot' },
+        },
+    })
+    console.log(await run.text()) // read the reply before sending the next message
+
+    // Same thread, same namespace. Do not pass threadCapabilities.
+    await client.chat.send(run.thread.id, { agentId: 'agt_1', message: 'Again, shorter.' })
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X POST "https://ds.cominty.com/chat" \
@@ -204,13 +258,14 @@ Keep in mind:
 
 - To switch namespaces, start a new thread.
 - Thread responses do not echo the namespace. Keep the name you sent.
-- `namespace` is required with `activation="always"`, and it is 1 to 128
-  characters.
+- `namespace` is required with `activation="always"` (`'always'` in
+  JavaScript), and it is 1 to 128 characters.
 - If you send no `memory` entry and the agent has no namespace configured on
   the platform, the thread runs normally with no memory tools. Nothing tells
   you that memory is off. Pass it on every start where you expect memory.
 - To run a thread with no memory, even if the agent has a namespace, pass
-  `MemoryCapability(activation="never")`. In HTTP, send
+  `MemoryCapability(activation="never")` in Python, or
+  `memory: { activation: 'never' }` in JavaScript. In HTTP, send
   `"memory": {"activation": "never"}`.
 - Other capabilities you pass in the same call do not remove the agent's
   namespace. Only the `memory` entry changes memory.
@@ -235,9 +290,18 @@ flowchart LR
   end
 ```
 
-```python
-namespace = f"support-bot-{client.user_id}"
-```
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    namespace = f"support-bot-{client.user_id}"
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const namespace = `support-bot-${client.userId}`
+    ```
+  </Tab>
+</Tabs>
 
 <Warning>
   A namespace is not a security boundary between agents. Any agent of your
@@ -268,6 +332,9 @@ no memory until you pass a `memory` capability.
     Memory endpoints, with a live playground.
   </Card>
   <Card title="Python SDK reference" icon="book" href="/sdk/reference#clientmemory">
+    Signatures and local validation rules for `client.memory`.
+  </Card>
+  <Card title="JavaScript SDK reference" icon="book" href="/js-sdk/reference#client-memory">
     Signatures and local validation rules for `client.memory`.
   </Card>
 </CardGroup>

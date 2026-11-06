@@ -397,7 +397,7 @@ Turns local files into an indexed document source. Concepts:
 Server limits: 100 drives per user (each `create` makes one, and a drive cannot
 be deleted) and 50 files per source. A chat over a source must run with the key
 owner's `user_id`. See
-[Sources](/guides/sources#chat-with-the-key-owners-user-id).
+[Sources](/guides/sources#chat-as-the-key-owner).
 
 ▶ [`examples/15_sources.py`](https://github.com/cominty/python-sdk/blob/main/examples/15_sources.py)
 
@@ -620,7 +620,7 @@ Capabilities replace `disabled_tools`, `source_ids`, `document_ids`, and
 `memory_namespace`, which SDK 1.0.0 removes. Concepts and recipes:
 [Capabilities](/guides/capabilities) and
 [Use cases](/guides/capabilities-use-cases). To move old code, see
-[Migrate from SDK 0.5.0](/guides/capabilities-troubleshooting#migrate-from-sdk-050).
+[Migrate from SDK 0.5.0](/guides/capabilities-troubleshooting#migrate-from-sdk-0-5-0).
 
 ```python
 from cominty_sdk import (
