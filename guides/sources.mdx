@@ -9,7 +9,8 @@ SDK does it in one call. Read
 [Custom agents](/guides/custom-agents#what-an-api-key-can-do) first for what an
 API key can and cannot see.
 
-Each snippet has a tab for the [Python SDK](/sdk/overview) and for HTTP.
+Each snippet has a tab for the [Python SDK](/sdk/overview), the
+[JavaScript SDK](/js-sdk/overview), and HTTP.
 
 <Info>
   Only **drag-and-drop** sources can be created with a key. Google Drive and
@@ -40,7 +41,8 @@ flowchart TD
   Your files are not available to the agent as soon as the source is created and
   the upload ends. The platform must first index every file. Until the source
   is `synced`, the agent finds nothing, or only some of the files. Wait for
-  `synced` before you start a chat. With the SDK, use `sources.wait_synced`. Over
+  `synced` before you start a chat. With the SDKs, use `sources.wait_synced`
+  (JavaScript: `sources.waitSynced`). Over
   HTTP, poll `GET /dc/sources` until `status` is `synced`.
 </Warning>
 
@@ -52,6 +54,24 @@ flowchart TD
     source = await client.sources.create(Path("docs"), name="Product docs")
     source = await client.sources.wait_synced(source.pid, timeout=420, interval=3)
     print(source.model_dump_json(indent=2))
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { readdir, readFile } from 'node:fs/promises'
+    import { join } from 'node:path'
+
+    // The folder's top-level files, hidden ones skipped, as File objects.
+    const entries = await readdir('docs', { withFileTypes: true })
+    const files = await Promise.all(
+        entries
+            .filter((entry) => entry.isFile() && !entry.name.startsWith('.'))
+            .map(async (entry) => new File([await readFile(join('docs', entry.name))], entry.name)),
+    )
+
+    let source = await client.sources.create(files, { name: 'Product docs' })
+    source = await client.sources.waitSynced(source.pid, { timeout: 420_000, interval: 3_000 })
+    console.log(JSON.stringify(source, null, 2))
     ```
   </Tab>
   <Tab title="HTTP">
@@ -129,6 +149,13 @@ these before any upload with `InvalidParams`:
 - two files with the same name;
 - more than 50 files.
 
+In JavaScript, `files` is one `File`, one `{ filename, content }` object whose
+`content` is a `Blob`, `ArrayBuffer`, or `Uint8Array`, or an array of them.
+There is no path input: read the files yourself, as in the snippet above. A
+string, an empty array, two files with the same name, or more than 50 files
+throw `InvalidParams` before any upload. See
+[`client.sources`](/js-sdk/reference#client-sources).
+
 `name` is optional. Without it, the server generates one.
 
 ### Two ids
@@ -138,29 +165,50 @@ A source has two ids. Do not mix them up.
 | Field | Type | Where it goes |
 | ----- | ---- | ------------- |
 | `source.pid` | `str` | Every `client.sources` method, and every HTTP path |
-| `source.id` | `int` | `IndexedDocumentsCapability(source_ids=[...])` and `IndexedDocumentsScope(source_ids=[...])` |
+| `source.id` | `int` | `IndexedDocumentsCapability(source_ids=[...])` and `IndexedDocumentsScope(source_ids=[...])`. In JavaScript, `indexedDocuments: { sourceIds: [...] }`. |
 
 ### Wait for the sync
 
 `wait_synced(pid, *, timeout=600.0, interval=5.0)` polls the source every
-`interval` seconds.
+`interval` seconds. In JavaScript, `waitSynced(pid, { timeout, interval })`
+takes milliseconds, with defaults of `600_000` and `5_000`.
 
 | Status it sees | What it does |
 | -------------- | ------------ |
 | `synced` | Returns the `SourceOut` |
 | `pending`, `syncing`, `out_of_sync`, `cancelling`, `pausing` | Keeps polling |
-| Anything else (`error`, `paused`, `archived`, `daily_quota_reached`, `invalid_configuration`, ...) | Raises `SourceSyncFailed`. The source as last read is `exc.source`. |
-| Still in progress after `timeout` | Raises `asyncio.TimeoutError` |
+| Anything else (`error`, `paused`, `archived`, `daily_quota_reached`, `invalid_configuration`, ...) | Raises `SourceSyncFailed`. The source as last read is `exc.source` (JavaScript: `error.source`). |
+| Still in progress after `timeout` | Raises `asyncio.TimeoutError`. JavaScript throws `SourceSyncTimeout`, with the last read in `error.source` (`null` if no read finished). |
 
-```python
-from cominty_sdk import SourceSyncFailed
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import SourceSyncFailed
 
-try:
-    await client.sources.wait_synced(source.pid, timeout=60, interval=2)
-except SourceSyncFailed as exc:
-    print(exc)                      # source 'oGCnsJeH-fyO' stopped in status 'paused' instead of reaching 'synced'
-    print(exc.source.status.value)  # paused
-```
+    try:
+        await client.sources.wait_synced(source.pid, timeout=60, interval=2)
+    except SourceSyncFailed as exc:
+        print(exc)                      # source 'oGCnsJeH-fyO' stopped in status 'paused' instead of reaching 'synced'
+        print(exc.source.status.value)  # paused
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { SourceSyncFailed } from '@cominty-ai/sdk'
+
+    try {
+        await client.sources.waitSynced(source.pid, { timeout: 60_000, interval: 2_000 })
+    } catch (error) {
+        if (error instanceof SourceSyncFailed) {
+            console.log(error.message)       // source 'oGCnsJeH-fyO' stopped in status 'paused' instead of reaching 'synced'
+            console.log(error.source.status) // paused
+        } else {
+            throw error
+        }
+    }
+    ```
+  </Tab>
+</Tabs>
 
 ## Give the source to an agent
 
@@ -190,6 +238,20 @@ Put the source's number `id` in an `IndexedDocumentsCapability`.
     )
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const agent = await client.agents.create({
+        name: 'Docs assistant',
+        instructions:
+            'Answer only from the company documents, always search them first. ' +
+            'Cite the documents you used.',
+        capabilities: {
+            indexedDocuments: { activation: 'always', sourceIds: [source.id] },
+            web: { activation: 'never' },
+        },
+    })
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X POST "https://ds.cominty.com/agents" \
@@ -207,11 +269,12 @@ Put the source's number `id` in an `IndexedDocumentsCapability`.
   </Tab>
 </Tabs>
 
-You can also pass the source in `thread_capabilities` on `chat.start`, or narrow
+You can also pass the source in `thread_capabilities` (JavaScript:
+`threadCapabilities`) on `chat.start`, or narrow
 it for one message with `IndexedDocumentsScope`. See
 [Capabilities](/guides/capabilities#find-your-ids).
 
-### Chat with the key owner's user id
+### Chat as the key owner
 
 A source created with a key is **private to the key owner**. A chat that searches
 it must run with the owner's id as `user_id`. The owner is `agent.owner` on any
@@ -229,6 +292,20 @@ agent the key created.
         message = await run.result()
     print(message.content)
     # The code word is **tangerine-4f2a**. <cite document_id="2698#10778" pages="1" name="facts.txt"/>
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { Cominty } from '@cominty-ai/sdk'
+
+    const ownerClient = new Cominty({ userId: agent.owner })
+    const run = await ownerClient.chat.start({
+        agentId: agent.id,
+        message: 'What is the code word?',
+    })
+    const message = await run.result()
+    console.log(message.content)
+    // The code word is **tangerine-4f2a**. <cite document_id="2698#10778" pages="1" name="facts.txt"/>
     ```
   </Tab>
   <Tab title="HTTP">
@@ -257,6 +334,13 @@ Resolve it to its source and file:
     print(document.model_dump_json(indent=2))
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const cites = [...message.content.matchAll(/<cite document_id="([^"]+)"/g)].map((m) => m[1]!)
+    const document = await client.documents.get(cites[0]!)
+    console.log(JSON.stringify(document, null, 2))
+    ```
+  </Tab>
   <Tab title="HTTP">
     The id contains a `#`, so URL-encode it.
 
@@ -282,9 +366,11 @@ Resolve it to its source and file:
 ```
 
 - An unknown id raises `NotFoundError` (404). There is no call that lists
-  documents. An empty id raises `ValueError` before any request.
-- `document_uri` can be `None`. For a drag-and-drop source, it ends with the id
-  of the file, the one `sources.download_file` takes.
+  documents. An empty id raises `ValueError` (JavaScript: `InvalidParams`)
+  before any request.
+- `document_uri` can be `None` (JavaScript: `null`). For a drag-and-drop source,
+  it ends with the id of the file, the one `sources.download_file` (JavaScript:
+  `sources.downloadFile`) takes.
 
 To read the original file, list the source's files and download one:
 
@@ -295,6 +381,16 @@ To read the original file, list the source's files and download one:
         print(file.id, file.name, file.size, file.mimetype)
 
     content = await client.sources.download_file(file.id)   # bytes
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const sourceFiles = await client.sources.listFiles(source.pid)
+    for (const file of sourceFiles) {
+        console.log(file.id, file.name, file.size, file.mimetype)
+    }
+
+    const content = await client.sources.downloadFile(sourceFiles.at(-1)!.id) // Uint8Array
     ```
   </Tab>
   <Tab title="HTTP">
@@ -308,7 +404,7 @@ To read the original file, list the source's files and download one:
   </Tab>
 </Tabs>
 
-`download_file` fetches the presigned URL for you, without sending the key. It
+`download_file` (JavaScript: `downloadFile`) fetches the presigned URL for you, without sending the key. It
 holds the whole file in memory.
 
 ## Keep a source up to date
@@ -333,6 +429,23 @@ holds the whole file in memory.
     source = await client.sources.archive(source.pid)  # terminal
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { readFile } from 'node:fs/promises'
+
+    const added = await client.sources.addFiles(source.pid, [
+        new File([await readFile('extra.csv')], 'extra.csv'),
+    ])
+    source = await client.sources.waitSynced(source.pid)
+    await client.sources.removeFile(source.pid, added[0]!.id)
+    source = await client.sources.update(source.pid, { name: 'Product docs (2026)' })
+
+    source = await client.sources.sync(source.pid)    // force a sync now
+    source = await client.sources.pause(source.pid)   // cancels a running sync
+    source = await client.sources.start(source.pid)   // only from paused
+    source = await client.sources.archive(source.pid) // terminal
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X PUT "https://ds.cominty.com/dc/sources/$PID/status?operation=sync" \
@@ -348,7 +461,7 @@ holds the whole file in memory.
   left for it or for the daily sync. The limit of 50 files counts the files
   already in the source.
 - `remove_file` deletes the file, then requests a sync under the same rule. An
-  empty `file_id` raises `ValueError`.
+  empty `file_id` raises `ValueError` (JavaScript: `InvalidParams`).
 - `update` only changes the name. The drive of a drag-and-drop source cannot
   change.
 - `list()` returns the key owner's sources and the organization's sources,
@@ -410,11 +523,12 @@ apply today:
   documents of a source, spreadsheets included, and open one by its document
   id. It then reads the content extracted from the spreadsheet, as long as it is
   not too large. For a large spreadsheet, or to work on its data, attach the
-  file to the chat with [`chat.upload_file`](/sdk/reference#client-chat) instead.
+  file to the chat with [`chat.upload_file`](/sdk/reference#client-chat)
+  (JavaScript: [`chat.uploadFile`](/js-sdk/reference#client-chat)) instead.
 - **The agent cannot download the raw file.** It reads the indexed content, but it
   cannot fetch the original file to transform it, for example to edit a
   document or to compute on a spreadsheet. To get the original, use
-  `sources.download_file` from your own code.
+  `sources.download_file` (JavaScript: `sources.downloadFile`) from your own code.
 
 ## Next steps
 

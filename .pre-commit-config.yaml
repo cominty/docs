@@ -22,3 +22,11 @@ repos:
         language: python
         pass_filenames: false
         files: \.(mdx|md)$
+
+      - id: check-ts-snippets
+        name: Check TypeScript/JavaScript snippets parse
+        entry: node scripts/check_ts_snippets.cjs
+        language: node
+        additional_dependencies: ["typescript@5.9.3"]
+        pass_filenames: false
+        files: \.(mdx|md)$

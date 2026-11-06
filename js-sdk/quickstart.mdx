@@ -1,0 +1,558 @@
+---
+title: "Quickstart"
+description: "Common tasks with the Cominty JavaScript SDK, each with copy-paste code"
+---
+
+Most scenarios below have a runnable script in the SDK's
+[`examples/`](https://github.com/cominty/js-sdk/tree/main/examples) directory.
+Each snippet assumes an ES module (top-level `await`), a `client`, and an
+`AGENT_ID`:
+
+```ts
+import { Cominty } from '@cominty-ai/sdk'
+
+const AGENT_ID = '__cominty_agents::agent.chat'
+
+const client = new Cominty() // COMINTY_API_KEY + COMINTY_USER_ID
+
+// the snippets below go here
+```
+
+Run the examples from a checkout of the repo. Node 24 runs the TypeScript files
+directly. On an older Node, use `npx tsx examples/01-stream-events.ts`.
+
+```bash
+git clone https://github.com/cominty/js-sdk.git && cd js-sdk
+pnpm install
+node examples/01-stream-events.ts
+```
+
+<Note>
+  New to the SDK? Read [Overview](/js-sdk/overview) first for install, auth, and
+  the core concepts (client, resources, runs, capabilities).
+</Note>
+
+## Stream progress events
+
+Watch the agent work (tool calls, LLM steps, the result) as it happens.
+Iterating a run yields **progress events only**. The finished reply is captured
+for you.
+
+```ts
+import { isKnownEvent } from '@cominty-ai/sdk'
+
+const run = await client.chat.start({ agentId: AGENT_ID, message: 'Research X and summarize.' })
+for await (const event of run) {
+    if (!isKnownEvent(event)) continue // an event type this SDK version does not know
+    if (event.name === 'tool_call') {
+        console.log('tool', event.data.name, event.status)
+    } else if (event.name === 'llm') {
+        console.log('llm ', event.data.description)
+    } else if (event.name === 'result') {
+        console.log('cost', event.data.cost.total)
+    }
+}
+console.log(await run.text())
+```
+
+`isKnownEvent` narrows the type, so `event.data` is fully typed in each branch.
+This is progress streaming, not token streaming: the reply arrives whole, in the
+`result` event and in the final message.
+
+▶ [`examples/01-stream-events.ts`](https://github.com/cominty/js-sdk/blob/main/examples/01-stream-events.ts)
+
+## Fire and await the answer
+
+No event handling. Just the final reply.
+
+```ts
+const run = await client.chat.start({ agentId: AGENT_ID, message: 'Give me one fun fact.' })
+console.log(await run.text())  // waits until done
+const reply = await run.result() // full Message (status, files, ...), cached
+```
+
+▶ [`examples/02-await-result.ts`](https://github.com/cominty/js-sdk/blob/main/examples/02-await-result.ts)
+
+## Continue the conversation
+
+`chat.send` posts a follow-up in the same thread. The agent keeps context.
+
+<Warning>
+  A thread handles **one message at a time**. Read the previous reply to the end
+  (`await run.text()`), or cancel it, before you send the next message. A
+  message you start and never read stays pending, and `chat.send` then throws
+  `APIError` (400, `Cannot process multiple messages at the same time`).
+  See [One message at a time](/js-sdk/reference#one-message-at-a-time).
+</Warning>
+
+```ts
+const first = await client.chat.start({ agentId: AGENT_ID, message: 'Pick a language.' })
+await first.text()
+const second = await client.chat.send(first.thread.id, {
+    agentId: AGENT_ID,
+    message: 'Now show hello-world in it.',
+})
+console.log(await second.text())
+```
+
+▶ [`examples/03-follow-up.ts`](https://github.com/cominty/js-sdk/blob/main/examples/03-follow-up.ts)
+
+## Answer questions from the agent
+
+When the agent needs input, it ends its turn with `questions` (a prompt plus
+options) instead of a final answer. Answer with a normal follow-up.
+
+```ts
+const run = await client.chat.start({ agentId: AGENT_ID, message: 'Book me a room.' })
+await run.text()
+for (const q of await run.questions()) {
+    console.log(q.prompt, q.options)
+}
+const reply = await client.chat.send(run.thread.id, { agentId: AGENT_ID, message: 'Tomorrow 10am' })
+console.log(await reply.text())
+```
+
+▶ [`examples/04-answer-questions.ts`](https://github.com/cominty/js-sdk/blob/main/examples/04-answer-questions.ts)
+
+## Cap the tool rounds
+
+`maxSteps` limits how many tool rounds the agent runs for one message. When
+the cap is reached, the agent recaps and asks whether to continue. The message
+still ends with `status: 'success'`. The cap applies to that message only, so
+pass it again on a follow-up. Sub-agents have their own counter. See
+[Limiting agent steps](/guides/max-steps).
+
+```ts
+const run = await client.chat.start({
+    agentId: AGENT_ID,
+    message: 'Research X, then write it up.',
+    maxSteps: 5,
+})
+await run.text()
+const reply = await client.chat.send(run.thread.id, {
+    agentId: AGENT_ID,
+    message: 'Yes, continue.',
+    maxSteps: 10,
+})
+console.log(await reply.text())
+```
+
+▶ [`examples/07-max-steps.ts`](https://github.com/cominty/js-sdk/blob/main/examples/07-max-steps.ts)
+
+## Stop a message
+
+`chat.cancel` stops an assistant message that is still being generated. It
+returns the message with `status` set to `'cancelled'`. It is not idempotent:
+cancelling a message that already finished throws `APIError` (400). A "stop"
+button should treat that error as "too late".
+
+```ts
+import { APIError } from '@cominty-ai/sdk'
+
+const run = await client.chat.start({
+    agentId: AGENT_ID,
+    message: 'Write a very detailed 3000 word market report.',
+})
+
+try {
+    const message = await client.chat.cancel(run.messageId)
+    console.log(message.status) // 'cancelled'
+} catch (error) {
+    if (!(error instanceof APIError)) throw error
+    console.log(error.status, error.message) // 400 Message is not live
+}
+```
+
+A cancelled message frees the thread: you can send the next message right away,
+without reading the cancelled message's events. Aborting an `AbortSignal` is
+different: it only closes your connection, and the agent keeps running.
+
+## Export a message as a document
+
+`chat.export` renders a finished message to a PDF or a DOCX and returns the
+bytes as a `Uint8Array`. The server sends no file name, so pick one when you
+write the file.
+
+```ts
+import { writeFile } from 'node:fs/promises'
+
+const run = await client.chat.start({
+    agentId: AGENT_ID,
+    message: 'Write a short product brief about a note-taking app, in Markdown.',
+})
+const reply = await run.result()
+
+const pdf = await client.chat.export(reply.id, { format: 'pdf' }) // or 'docx'
+await writeFile('brief.pdf', pdf)
+```
+
+A message with no content, for example one that is still running, throws
+`APIError` (400). Any `format` other than `'pdf'` or `'docx'` throws
+`InvalidParams` before a request is sent.
+
+## Give the agent files
+
+`chat.uploadFile` registers a file. Its `id` goes in `fileIds` on `chat.start`
+or `chat.send`, at most 5 files per message. Pass a `Blob` or a `File` (its name
+and type are used), or an `ArrayBuffer` or `Uint8Array` with a `filename`. In
+Node, open a path with `openAsBlob`. A string is rejected: it is ambiguous
+between a path and text.
+
+```ts
+import { openAsBlob } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
+import { basename } from 'node:path'
+
+const report = await client.chat.uploadFile(await openAsBlob('q3-report.pdf'), {
+    filename: 'q3-report.pdf',
+})
+const data = await client.chat.uploadFile(new TextEncoder().encode('a,b\n1,2\n'), {
+    filename: 'data.csv',
+})
+
+const run = await client.chat.start({
+    agentId: AGENT_ID,
+    message: 'Compare these two files.',
+    fileIds: [report.id, data.id],
+})
+const reply = await run.result()
+
+// Read a file back, including the ones the agent produced.
+const content = await client.chat.downloadFile(report.id)
+for (const file of reply.files) {
+    // Keep only the last path segment: file names are not under your control.
+    await writeFile(basename(file.name), await client.chat.downloadFile(file.id))
+}
+```
+
+A file is at most 500 MiB. A bigger one throws `InvalidParams` before anything
+is sent. A download is held in memory. See
+[the reference](/js-sdk/reference#upload-and-download-files) for the limits and
+errors.
+
+## List and search threads
+
+```ts
+for (const t of await client.threads.list({ limit: 20 })) {
+    console.log(t.created_at, t.name, t.id)
+}
+await client.threads.list({ terms: ['invoice'] })  // free-text search
+await client.threads.list({ limit: 10, page: 1 })  // paginate (zero-based)
+```
+
+▶ [`examples/05-list-threads.ts`](https://github.com/cominty/js-sdk/blob/main/examples/05-list-threads.ts)
+
+## Manage a thread
+
+```ts
+const thread = await client.threads.get(threadId)                     // full history
+await client.threads.update(threadId, { name: 'Renamed', starred: true }) // partial, returns ThreadSummary
+await client.threads.archive(threadId)                                // soft-delete
+```
+
+▶ [`examples/06-manage-thread.ts`](https://github.com/cominty/js-sdk/blob/main/examples/06-manage-thread.ts)
+
+## Store and recall a memory file
+
+`client.memory` stores files in a namespace you choose. The same API key shares
+those files across `userId` values. `update` is partial, and its required
+`version` guards against overwriting a concurrent change. A stale one throws
+`ConflictError`. To use the files in a conversation, pass a `memory` capability
+in `threadCapabilities` to `chat.start`. The concepts are in
+[Memory namespaces](/guides/memory-namespaces).
+
+```ts
+import { ConflictError } from '@cominty-ai/sdk'
+
+const namespace = 'support-bot'
+
+const created = await client.memory.create({
+    path: 'preferences/tone.md',
+    namespace,
+    purpose: 'writing style',
+    content: 'Keep it casual.',
+})
+
+const summaries = await client.memory.list({ namespace }) // no content
+const fetched = await client.memory.get('preferences/tone.md', { namespace })
+
+const updated = await client.memory.update('preferences/tone.md', {
+    namespace,
+    version: fetched.version,
+    content: 'Keep it upbeat.',
+})
+
+try {
+    await client.memory.update('preferences/tone.md', {
+        namespace,
+        version: fetched.version,
+        content: 'stale',
+    })
+} catch (error) {
+    if (!(error instanceof ConflictError)) throw error
+    console.log('version was stale. Re-fetch and retry')
+}
+
+await client.memory.delete('preferences/tone.md', { namespace })
+
+const run = await client.chat.start({
+    agentId: AGENT_ID,
+    message: 'Use the tone file.',
+    threadCapabilities: {
+        memory: { activation: 'always', namespace },
+    },
+})
+```
+
+▶ [`examples/08-memory-files.ts`](https://github.com/cominty/js-sdk/blob/main/examples/08-memory-files.ts)
+
+## Control what the agent can use
+
+Capabilities decide which tools the agent can use: web search, document search,
+MCP connections, skills, media generation, and memory. Set them for a whole
+thread with `threadCapabilities` (on `chat.start` only), or for one message with
+`messageScope` (on `chat.start` and `chat.send`).
+
+```ts
+const run = await client.chat.start({
+    agentId: AGENT_ID,
+    message: 'What is the refund window for annual plans?',
+    threadCapabilities: {
+        web: { activation: 'on_request' }, // off until a message asks
+    },
+})
+console.log(await run.text())
+
+const reply = await client.chat.send(run.thread.id, {
+    agentId: AGENT_ID,
+    message: "Check a competitor's pricing online.",
+    messageScope: { web: { enabled: true } }, // this message only
+})
+console.log(await reply.text())
+```
+
+See [Capabilities](/guides/capabilities) for the model, and
+[Use cases](/guides/capabilities-use-cases) for recipes.
+
+## Use a custom managed agent
+
+A custom agent (its own model, failover order, and instructions, configured at
+[platform.cominty.ai → Agents](https://platform.cominty.ai/agents)) is just
+another `agentId`. Pass it to any chat call. This example feeds a jargon-heavy
+incident report to an agent instructed to reply with a clean, non-technical
+**French** executive summary.
+
+```ts
+const run = await client.chat.start({
+    agentId: CUSTOM_AGENT_ID,
+    message: TECHNICAL_INPUT,
+    messageScope: {
+        // pure transformation: no tools
+        web: { enabled: false },
+        indexedDocuments: { enabled: false },
+        mcp: { enabled: false },
+    },
+})
+console.log(await run.text()) // bullet-point French briefing for a C-level reader
+```
+
+## Pull live context from an MCP server
+
+MCP servers connected to an agent on the platform (for example Linear) work with
+**no SDK change**. Capabilities are on by default, and a message scope turns off
+what you don't want. Here the custom agent reads the current Linear sprint and
+reports it in its French C-level voice. Linear tool calls appear in the stream as
+`tool_call` events.
+
+```ts
+const run = await client.chat.start({
+    agentId: CUSTOM_AGENT_ID,
+    message: 'Using Linear, list the current-sprint tasks and summarize for leadership.',
+    messageScope: {
+        // keep MCP (Linear) on, cut the rest
+        web: { enabled: false },
+        indexedDocuments: { enabled: false },
+    },
+})
+console.log(await run.text())
+```
+
+## List the MCP integrations
+
+`mcp.list` returns the integrations your API key can use. A server's `name` is
+the value `mcp.connections` stores. By default it keeps only the servers that
+are turned on.
+
+```ts
+const servers = await client.mcp.list()
+for (const server of servers) {
+    console.log(server.name, server.title, server.requires_oauth_connect)
+}
+
+const everything = await client.mcp.list({ enabled: null }) // every server, on or off
+```
+
+`requires_oauth_connect` is `true` when someone must connect the integration on
+the platform first. If the manifest cannot be loaded, the SDK throws
+`ServerError`.
+
+▶ [`examples/12-mcp-servers.ts`](https://github.com/cominty/js-sdk/blob/main/examples/12-mcp-servers.ts)
+
+## Create a custom agent
+
+Create an agent from code, with its own instructions and capabilities. The agent
+is owned by the user who created your API key. Chat with it like any other
+agent.
+
+```ts
+let agent = await client.agents.create({
+    name: 'Integration helper',
+    instructions: 'Use your connected integration when it helps. Be brief.',
+    scope: 'organization',
+    capabilities: {
+        mcp: { activation: 'always', connections: [servers[0]!.name] },
+        web: { activation: 'never' },
+    },
+})
+const run = await client.chat.start({
+    agentId: agent.id,
+    message: 'Which integration can you use? Answer in one sentence.',
+})
+console.log(await run.text())
+
+agent = await client.agents.update(agent.id, { name: 'Helper v2', description: null })
+await client.agents.delete(agent.id)
+```
+
+`update` is partial: `null` clears `description`, `instructions`, and
+`capabilities`, and a capabilities object is merged capability by capability.
+An agent's `capabilities` come back in the same camelCase shape you pass, so a
+read can go straight back into `update`. See
+[Custom agents](/guides/custom-agents).
+
+▶ [`examples/10-agents.ts`](https://github.com/cominty/js-sdk/blob/main/examples/10-agents.ts)
+
+## Choose the agent's models
+
+`agents.listModels` gives the model ids. `setModels` replaces the agent's
+chain: the first model answers, and the next ones take over when it fails.
+
+```ts
+const models = await client.agents.listModels()
+agent = await client.agents.setModels(agent.id, {
+    modelIds: [models[1]!.id, models[0]!.id],
+})
+console.log(agent.models.map((model) => model.name))
+```
+
+On a built-in agent, `setModels` changes the chain of the whole organization.
+
+## Give an agent a skill
+
+A skill is a folder with a `SKILL.md`. Pass its files by path and
+`skills.create` zips them in memory, or pass a zip as is. Give the skill to an
+agent with the `skills` capability.
+
+```ts
+import { readFile } from 'node:fs/promises'
+
+const skill = await client.skills.create(
+    {
+        'SKILL.md': await readFile('release-notes/SKILL.md'),
+        'templates/notes.md': await readFile('release-notes/templates/notes.md'),
+    },
+    { displayName: 'Release notes' },
+)
+const agent = await client.agents.create({
+    name: 'Greeter',
+    capabilities: {
+        skills: { activation: 'always', include: [skill.id] },
+    },
+})
+const run = await client.chat.start({ agentId: agent.id, message: 'Give me the QA greeting.' })
+console.log(await run.text())
+```
+
+To upload a whole folder, the example script walks it with `readdir`. See
+[Skills](/guides/skills) for the folder layout and the versions.
+
+▶ [`examples/11-skills.ts`](https://github.com/cominty/js-sdk/blob/main/examples/11-skills.ts)
+
+## Search your own files
+
+`sources.create` turns files into an indexed source in one call. Wait for it to
+be `synced`, then give its `id` to an agent. The chat must run with the key
+owner's `userId`, which is `agent.owner`.
+
+```ts
+import { readdir, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { Cominty } from '@cominty-ai/sdk'
+
+const files = await Promise.all(
+    (await readdir('docs')).map(async (name) => new File([await readFile(join('docs', name))], name)),
+)
+
+let source = await client.sources.create(files, { name: 'Product docs' })
+source = await client.sources.waitSynced(source.pid, { timeout: 420_000, interval: 3_000 })
+
+const agent = await client.agents.create({
+    name: 'Docs assistant',
+    instructions: 'Answer only from the company documents. Cite the documents you used.',
+    capabilities: {
+        indexedDocuments: { activation: 'always', sourceIds: [source.id] },
+    },
+})
+
+const ownerClient = new Cominty({ userId: agent.owner })
+const run = await ownerClient.chat.start({ agentId: agent.id, message: 'What is the code word?' })
+const message = await run.result()
+console.log(message.content)
+```
+
+`source.pid` (a string) goes to every `client.sources` method. `source.id` (a
+number) goes to `sourceIds`. `waitSynced` takes milliseconds. See
+[Sources](/guides/sources).
+
+▶ [`examples/09-sources.ts`](https://github.com/cominty/js-sdk/blob/main/examples/09-sources.ts)
+
+## Resolve a citation
+
+An answer cites documents as `<cite document_id="2698#10778" .../>`.
+`documents.get` resolves that id to the source and the file.
+
+```ts
+const cites = [...message.content.matchAll(/<cite document_id="([^"]+)"/g)].map((m) => m[1]!)
+const document = await client.documents.get(cites[0]!)
+console.log(document.document_name, document.source_pid, document.document_uri)
+
+const sourceFiles = await client.sources.listFiles(document.source_pid)
+const content = await client.sources.downloadFile(sourceFiles[0]!.id) // Uint8Array
+```
+
+An unknown id throws `NotFoundError`. There is no call that lists documents.
+
+## Handle errors
+
+```ts
+import { APIError, RateLimitError } from '@cominty-ai/sdk'
+
+try {
+    const run = await client.chat.start({ agentId: AGENT_ID, message: 'hi' })
+    console.log(await run.text())
+} catch (error) {
+    if (error instanceof RateLimitError) {
+        console.log(error.message) // clear, scope-aware message
+        console.log(error.scope, error.retryAfter, error.resetAt)
+    } else if (error instanceof APIError) {
+        console.log(error.status, error.detail)
+    } else {
+        throw error
+    }
+}
+```
+
+A run can also fail while it streams, after `chat.start` succeeded, so wrap the
+code that reads the run too. The SDK never retries on its own: sending a message
+twice would start a second run. See [Errors](/js-sdk/reference#errors) for the
+full hierarchy.

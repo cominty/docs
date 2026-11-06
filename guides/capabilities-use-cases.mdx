@@ -11,27 +11,44 @@ If you want the definitions first, read [Capabilities](/guides/capabilities).
 
 ## Before you start
 
-Every snippet runs inside an `AsyncCominty` context and uses these
-placeholders. Replace them with your own values.
+Every snippet runs with an open client and uses these placeholders. Replace
+them with your own values.
 
-```python
-import asyncio
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    import asyncio
 
-from cominty_sdk import AsyncCominty
+    from cominty_sdk import AsyncCominty
 
-AGENT_ID = "__cominty_agents::agent.chat"  # or the id of your own agent
-SOURCE_ID = 2292  # copied from platform.cominty.ai/knowledge, the ID of a source
-OTHER_SOURCE_ID = 2293  # a second source
-SKILL_ID = "your-skill-id"  # copied from the Skills page of the platform
-
-
-async def main():
-    async with AsyncCominty() as client:  # COMINTY_API_KEY + COMINTY_USER_ID
-        ...  # paste a recipe here
+    AGENT_ID = "__cominty_agents::agent.chat"  # or the id of your own agent
+    SOURCE_ID = 2292  # copied from platform.cominty.ai/knowledge, the ID of a source
+    OTHER_SOURCE_ID = 2293  # a second source
+    SKILL_ID = "your-skill-id"  # copied from the Skills page of the platform
 
 
-asyncio.run(main())
-```
+    async def main():
+        async with AsyncCominty() as client:  # COMINTY_API_KEY + COMINTY_USER_ID
+            ...  # paste a recipe here
+
+
+    asyncio.run(main())
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { Cominty } from '@cominty-ai/sdk'
+
+    const AGENT_ID = '__cominty_agents::agent.chat' // or the id of your own agent
+    const SOURCE_ID = 2292 // copied from platform.cominty.ai/knowledge, the ID of a source
+    const OTHER_SOURCE_ID = 2293 // a second source
+    const SKILL_ID = 'your-skill-id' // copied from the Skills page of the platform
+
+    const client = new Cominty() // COMINTY_API_KEY + COMINTY_USER_ID
+    // paste a recipe here (an ES module, so top-level await works)
+    ```
+  </Tab>
+</Tabs>
 
 <Tip>
   Not sure where to find an id? See [Find your ids](/guides/capabilities#find-your-ids).
@@ -96,6 +113,23 @@ search the web on any message. This recipe turns it off for one message.
     print(await follow_up.text())
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: 'Without searching the web, what is the MCP protocol? Two sentences.',
+        messageScope: { web: { enabled: false } },
+    })
+    console.log(await run.text())
+
+    // Next message, no scope: web search is available again.
+    const followUp = await client.chat.send(run.thread.id, {
+        agentId: AGENT_ID,
+        message: 'Now check the latest version of the spec online.',
+    })
+    console.log(await followUp.text())
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X POST "https://ds.cominty.com/chat" \
@@ -153,6 +187,18 @@ the source **ID** from the [Documents page](https://platform.cominty.ai/knowledg
     print(await run.text())
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: 'In my documents, which board decks can you find? Give each document id.',
+        messageScope: {
+            indexedDocuments: { enabled: true, sourceIds: [SOURCE_ID] },
+        },
+    })
+    console.log(await run.text())
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X POST "https://ds.cominty.com/chat" \
@@ -193,6 +239,20 @@ of the 2024 deck, then pin the next message to that document:
         ),
     )
     print(await reply.text())
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const DOCUMENT_ID = '2292#8058' // the id the agent gave you
+
+    const reply = await client.chat.send(run.thread.id, {
+        agentId: AGENT_ID,
+        message: 'Summarize the 2024 board deck in five bullet points.',
+        messageScope: {
+            indexedDocuments: { enabled: true, documentIds: [DOCUMENT_ID] },
+        },
+    })
+    console.log(await reply.text())
     ```
   </Tab>
   <Tab title="HTTP">
@@ -255,6 +315,23 @@ Turn MCP off for one message:
     print(await follow_up.text())
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: 'Without calling Linear or Slack, draft a short status update template.',
+        messageScope: { mcp: { enabled: false } },
+    })
+    console.log(await run.text())
+
+    // Next message, no scope: Linear and Slack are available again.
+    const followUp = await client.chat.send(run.thread.id, {
+        agentId: AGENT_ID,
+        message: 'Now check Linear for what is in progress.',
+    })
+    console.log(await followUp.text())
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X POST "https://ds.cominty.com/chat" \
@@ -287,6 +364,18 @@ To keep only some connections, list them:
         ),
     )
     print(await run.text())
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: 'In Linear, list the tasks assigned to me this sprint.',
+        messageScope: {
+            mcp: { enabled: true, connections: ['linear'] },
+        },
+    })
+    console.log(await run.text())
     ```
   </Tab>
   <Tab title="HTTP">
@@ -348,6 +437,20 @@ answer faster and more predictable.
         ),
     )
     print(await run.text())
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: 'Rewrite for a non-technical reader: the p99 latency spiked to 1.4s.',
+        messageScope: {
+            web: { enabled: false },
+            indexedDocuments: { enabled: false },
+            mcp: { enabled: false },
+        },
+    })
+    console.log(await run.text())
     ```
   </Tab>
   <Tab title="HTTP">
@@ -420,6 +523,32 @@ This time the rule is for the whole thread. Use `thread_capabilities` with
         )
     except APIError as exc:
         print(exc.status_code, exc.detail)  # 422
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { APIError } from '@cominty-ai/sdk'
+
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: 'What is the refund window for annual plans?',
+        threadCapabilities: {
+            web: { activation: 'never' },
+        },
+    })
+    console.log(await run.text())
+
+    // A later message cannot bring the web back.
+    try {
+        await client.chat.send(run.thread.id, {
+            agentId: AGENT_ID,
+            message: "Check a competitor's pricing online.",
+            messageScope: { web: { enabled: true } },
+        })
+    } catch (error) {
+        if (!(error instanceof APIError)) throw error
+        console.log(error.status, error.detail) // 422
+    }
     ```
   </Tab>
   <Tab title="HTTP">
@@ -498,6 +627,34 @@ on.
     print(await text_only.text())
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: 'Describe a simple onboarding flow in three steps.',
+        threadCapabilities: {
+            imageGeneration: { activation: 'on_request' },
+        },
+    })
+    console.log(await run.text())
+
+    const drawing = await client.chat.send(run.thread.id, {
+        agentId: AGENT_ID,
+        message: 'Generate an image of that flow, drawn as a diagram.',
+        messageScope: {
+            imageGeneration: { enabled: true },
+        },
+    })
+    console.log(await drawing.text())
+
+    // Next message, no scope: image generation is off again.
+    const textOnly = await client.chat.send(run.thread.id, {
+        agentId: AGENT_ID,
+        message: 'Now add a fourth step, in words.',
+    })
+    console.log(await textOnly.text())
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X POST "https://ds.cominty.com/chat/$THREAD_ID" \
@@ -556,6 +713,23 @@ filter. This recipe restricts three of them for the whole thread.
     print(await run.text())
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: 'A customer cannot log in after a password reset. What do we do?',
+        threadCapabilities: {
+            indexedDocuments: {
+                activation: 'always',
+                sourceIds: [SOURCE_ID, OTHER_SOURCE_ID],
+            },
+            mcp: { activation: 'always', connections: ['linear'] },
+            skills: { activation: 'always', include: [SKILL_ID] },
+        },
+    })
+    console.log(await run.text())
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X POST "https://ds.cominty.com/chat" \
@@ -596,8 +770,10 @@ McpCapability(activation="always")                  # every connection
 McpCapability(activation="always", connections=ALL)  # same thing
 ```
 
-Three values look like "no filter" but are errors. The SDK raises
-`InvalidParams` before it sends anything:
+Three values look like "no filter" but are errors. The Python SDK raises
+`InvalidParams` when you build the object. The JavaScript SDK, whose
+capabilities are plain objects, throws `InvalidParams` from `chat.start` or
+`chat.send`, before it sends anything:
 
 ```python
 from cominty_sdk import InvalidParams, McpCapability
@@ -611,7 +787,7 @@ for bad in (None, [], ["*"]):
 
 | Value | Why it is refused | What to pass instead |
 | ----- | ----------------- | -------------------- |
-| `None` | Ambiguous | `ALL` for no restriction |
+| `None` (`null` in JavaScript) | Ambiguous | `ALL` for no restriction |
 | `[]` | An empty list is ambiguous | `ALL`, or turn the capability off |
 | `["*"]` | `"*"` inside a list is not a wildcard | `ALL` on its own |
 
@@ -663,6 +839,30 @@ id.
         message="What do you remember about this customer?",
     )
     print(await follow_up.text())
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const customerId = 'acme'
+
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: 'Remember that this customer prefers short answers.',
+        threadCapabilities: {
+            memory: {
+                activation: 'always',
+                namespace: `customer-${customerId}`,
+            },
+        },
+    })
+    console.log(await run.text())
+
+    // The namespace is frozen for the thread: no need to repeat it.
+    const followUp = await client.chat.send(run.thread.id, {
+        agentId: AGENT_ID,
+        message: 'What do you remember about this customer?',
+    })
+    console.log(await followUp.text())
     ```
   </Tab>
   <Tab title="HTTP">
@@ -782,6 +982,57 @@ without ever going beyond it.
         )
     except APIError as exc:
         print(exc.status_code, exc.detail)  # 422
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { APIError } from '@cominty-ai/sdk'
+
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: 'Which plans include single sign-on?',
+        threadCapabilities: {
+            web: { activation: 'never' },
+            indexedDocuments: {
+                activation: 'always',
+                sourceIds: [SOURCE_ID, OTHER_SOURCE_ID],
+            },
+            mcp: { activation: 'on_request', connections: ['linear'] },
+        },
+    })
+    console.log(await run.text())
+
+    // Narrow to one source for this message.
+    const narrowed = await client.chat.send(run.thread.id, {
+        agentId: AGENT_ID,
+        message: 'In the first source only, which plans include single sign-on?',
+        messageScope: {
+            indexedDocuments: { enabled: true, sourceIds: [SOURCE_ID] },
+        },
+    })
+    console.log(await narrowed.text())
+
+    // Turn the on_request connection on for one message.
+    const withLinear = await client.chat.send(run.thread.id, {
+        agentId: AGENT_ID,
+        message: 'Check Linear: is there an open ticket about SSO?',
+        messageScope: { mcp: { enabled: true } },
+    })
+    console.log(await withLinear.text())
+
+    // Going beyond the thread is refused.
+    try {
+        await client.chat.send(run.thread.id, {
+            agentId: AGENT_ID,
+            message: 'Search every source.',
+            messageScope: {
+                indexedDocuments: { enabled: true, sourceIds: [SOURCE_ID, 999999] },
+            },
+        })
+    } catch (error) {
+        if (!(error instanceof APIError)) throw error
+        console.log(error.status, error.detail) // 422
+    }
     ```
   </Tab>
   <Tab title="HTTP">

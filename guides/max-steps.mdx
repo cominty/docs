@@ -13,8 +13,9 @@ short recap, and asks whether it should continue. The message ends with
 `status` set to `success`. You continue with a normal follow-up in the same
 thread.
 
-This guide works the same with the [Python SDK](/sdk/reference#max_steps) and
-the [HTTP API](/api-reference#tool-round-cap).
+This guide works the same with the [Python SDK](/sdk/reference#max_steps), the
+[JavaScript SDK](/js-sdk/reference#maxsteps) (`maxSteps`), and the
+[HTTP API](/api-reference#tool-round-cap).
 
 <Note>
   `max_steps` is available through the API and the SDK. It is not yet exposed
@@ -36,6 +37,16 @@ follow-up. If you omit it, the server applies its default. Today the default is
         max_steps=5,
     )
     print(await run.text())
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: 'agt_1',
+        message: 'Find the release date of Python 3.13',
+        maxSteps: 5,
+    })
+    console.log(await run.text())
     ```
   </Tab>
   <Tab title="HTTP">
@@ -147,6 +158,23 @@ custom cap.
     print(await reply.text())
     ```
   </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const run = await client.chat.start({
+        agentId: AGENT_ID,
+        message: 'Research X, then write it up.',
+        maxSteps: 5,
+    })
+    await run.text() // recap, asks whether to continue
+
+    const reply = await client.chat.send(run.thread.id, {
+        agentId: AGENT_ID,
+        message: 'Yes, continue.',
+        maxSteps: 5,
+    })
+    console.log(await reply.text())
+    ```
+  </Tab>
   <Tab title="HTTP">
     ```bash
     curl -X POST "https://ds.cominty.com/chat/$THREAD_ID" \
@@ -185,17 +213,19 @@ need to display it.
 Always send a JSON integer `>= 1`. Nothing is created when a request is
 rejected.
 
-| Value sent | HTTP API | Python SDK |
-| ---------- | -------- | ---------- |
-| `null` | 422 `int_type` | `InvalidParams` |
-| Below 1 | 422 `greater_than_equal` | `InvalidParams` |
-| A float | 422 `int_from_float` | `InvalidParams` |
-| A non-numeric string | 422 `int_parsing` | `InvalidParams` |
+| Value sent | HTTP API | Python SDK | JavaScript SDK |
+| ---------- | -------- | ---------- | -------------- |
+| `null` | 422 `int_type` | `InvalidParams` | `InvalidParams` |
+| Below 1 | 422 `greater_than_equal` | `InvalidParams` | `InvalidParams` |
+| A float | 422 `int_from_float` | `InvalidParams` | `InvalidParams` |
+| A non-numeric string | 422 `int_parsing` | `InvalidParams` | `InvalidParams` |
+
+The JavaScript SDK also refuses `NaN`, `Infinity`, and a boolean.
 
 ## Scope
 
 - `max_steps` exists on `POST /chat` and `POST /chat/{thread_id}`, and on
-  `chat.start` and `chat.send` in the SDK.
+  `chat.start` and `chat.send` in the SDKs (`maxSteps` in JavaScript).
 - Routines also accept `max_steps` on the platform, but the SDK and the public
   API reference do not cover routines.
 - Agents have no `max_steps` setting. Each message carries its own value.
@@ -210,5 +240,8 @@ rejected.
   </Card>
   <Card title="Python SDK reference" icon="book" href="/sdk/reference#max_steps">
     The `max_steps` argument, `MaxSteps`, and `SERVER_DEFAULT`.
+  </Card>
+  <Card title="JavaScript SDK reference" icon="book" href="/js-sdk/reference#maxsteps">
+    The `maxSteps` parameter of `chat.start` and `chat.send`.
   </Card>
 </CardGroup>

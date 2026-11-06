@@ -16,17 +16,32 @@ the [use case on connections](/guides/capabilities-use-cases#recipe-3-keep-some-
 ## List the integrations from code
 
 With an API key, `client.mcp.list()` returns the integrations you can use. A
-server's `name` is the value to put in `McpCapability.connections`.
+server's `name` is the value to put in `McpCapability.connections` (Python) or
+`mcp.connections` (JavaScript).
 
-```python
-servers = await client.mcp.list()           # only the ones turned on
-everything = await client.mcp.list(enabled=None)
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    servers = await client.mcp.list()           # only the ones turned on
+    everything = await client.mcp.list(enabled=None)
 
-for server in everything:
-    print(server.name, server.is_enabled, server.requires_oauth_connect)
-```
+    for server in everything:
+        print(server.name, server.is_enabled, server.requires_oauth_connect)
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const servers = await client.mcp.list() // only the ones turned on
+    const everything = await client.mcp.list({ enabled: null })
 
-`requires_oauth_connect` is `True` when someone must connect the integration with
+    for (const server of everything) {
+        console.log(server.name, server.is_enabled, server.requires_oauth_connect)
+    }
+    ```
+  </Tab>
+</Tabs>
+
+`requires_oauth_connect` is `True` (`true` in JavaScript) when someone must connect the integration with
 OAuth on the platform first. The call does not connect anything. To create an
 agent that uses a server, see [Custom agents](/guides/custom-agents). Over HTTP,
 the call is `GET /mcp/manifest`.

@@ -122,17 +122,18 @@ Each concept has one home. Do not duplicate it across tabs.
 - **Guides** (`index`, `quickstart`, `guides/*`): concepts that apply to both
  the SDK and the API (capabilities, memory namespaces, `max_steps`, and the
  **Build with code** group: custom agents, skills, sources). This is the single
-  source of truth for behavior. Show both surfaces with `<Tabs>` (Python SDK
-  and HTTP).
+  source of truth for behavior. Show every surface with `<Tabs>`, in this
+  order: `Python SDK`, `JavaScript SDK`, `HTTP`. Keep the tab titles exactly
+  as written: Mintlify syncs tabs with the same title across a page.
 - **MCP** (`mcp/*`): how to connect external tools. `mcp/overview` and
   `mcp/oauth-callback` are general. Each provider gets one page in
   `mcp/integrations/` (copy `bigquery.mdx` as the template) and an entry in the
   **Integrations** group of `docs.json`. The OAuth callback URL is
   `https://mcp.cominty.com/v2/oauth/callback`. Link to `/guides/static-ip`
   for allowlisting instead of repeating the IPs.
-- **Python SDK** (`sdk/*`): only what is specific to the SDK (install, auth,
-  signatures, local validation, `InvalidParams`, migration of SDK calls).
-  Link to the guides for concepts.
+- **Python SDK** (`sdk/*`) and **JavaScript SDK** (`js-sdk/*`): only what is
+  specific to each SDK (install, auth, signatures, local validation,
+  `InvalidParams`, migration of SDK calls). Link to the guides for concepts.
 - **API Reference**: only what is specific to the endpoints (status codes,
   query vs body, spec quirks). Link to the guides for concepts.
 
@@ -144,6 +145,41 @@ documents the `cominty-sdk` PyPI package. There is no local copy of its
 source. Keep these pages aligned with the SDK's own README and code at
 [github.com/cominty/python-sdk](https://github.com/cominty/python-sdk); check
 there directly whenever the SDK gains or changes public resources.
+
+The **JavaScript SDK** tab (`js-sdk/overview`, `js-sdk/quickstart`,
+`js-sdk/reference`) documents the `@cominty-ai/sdk` npm package (0.4.0 when the
+tab was written). Its source, README, and `docs/` (`api.md`, `errors.md`,
+`streaming.md`) are at
+[github.com/cominty/js-sdk](https://github.com/cominty/js-sdk). It ports the
+Python SDK release by release. Differences to keep in mind:
+
+- Arguments are camelCase (`agentId`, `threadCapabilities`, `messageScope`,
+  `indexedDocuments`, `sourceIds`). Response fields stay snake_case
+  (`thread_id`, `created_at`, `documents_synced`).
+- Capabilities and scopes are plain objects (`{ web: { activation: 'never' } }`),
+  validated when `chat.start`/`chat.send` is called, not when built.
+- `null` clears a field where Python uses `None`. Durations (`timeout`,
+  `interval`) are milliseconds. Bytes are `Uint8Array`.
+- Mistakes Python reports with `TypeError` or `ValueError` are `InvalidParams`
+  in JavaScript (`threadCapabilities` on `chat.send`, an empty id, a non-UUID
+  message id). `waitSynced` throws `SourceSyncTimeout`.
+- There is no path input. Files are `File`/`Blob`/bytes, and a skill is a zip
+  or a `SkillFiles` object (`{ 'SKILL.md': ... }`).
+- The deprecated `sourceIds`, `documentIds`, `disabledTools`, and
+  `memoryNamespace` still work (Python removed them). Mixing them with the new
+  arguments throws `InvalidParams`. Never show them in snippets.
+- The SDK refuses to run in a browser (`dangerouslyAllowBrowser` overrides
+  it). The docs present it as server-side only.
+
+JavaScript snippets use ` ```ts ` fences, single quotes, no semicolons,
+4-space indent, top-level `await` in an ES module, and a `client` in scope, like
+the Python snippets. The quickstarts of both SDKs share their headings, so the
+anchors match (`/sdk/quickstart#x` and `/js-sdk/quickstart#x`).
+
+Mintlify keeps a heading's apostrophe as `’` in its anchor, and turns `0.5.0`
+into `0-5-0`. A link written as `#answer-the-agents-questions` never matches.
+Avoid apostrophes in headings you link to, and check new anchors against the
+`id`s that `mint dev` renders: `mint broken-links` does not check anchors.
 
 ## CI
 
@@ -157,6 +193,10 @@ there directly whenever the SDK gains or changes public resources.
  are fragments meant to run inside an `async def`). Bare signature blocks
  like `AsyncCominty(*, user_id=None, ...)` are re-checked as a `def`. `*,`
  is only valid there, not in a call.
+- `node scripts/check_ts_snippets.cjs`: every ` ```ts `, ` ```typescript `,
+ ` ```js `, and ` ```javascript ` fence must parse (the TypeScript parser, as
+ an ES module, so top-level `await` is allowed). It does not type-check.
+ Run `npm install --no-save --no-package-lock typescript@5.9.3` first.
 - `python scripts/check_images.py`: image size and no Git LFS (see **Images**).
 
 The same checks run before each commit through
@@ -218,7 +258,8 @@ easy to get wrong:
   capability the agent sets to `never`. Never present `never` on an agent as a
   security barrier.
 - `POST /chat/{thread_id}` lists `options.capabilities` in the spec but returns
-  422. The SDK has no `thread_capabilities` on `chat.send` (`TypeError`).
+  422. The Python SDK has no `thread_capabilities` on `chat.send` (`TypeError`).
+  The JavaScript SDK throws `InvalidParams` for `threadCapabilities` there.
 - `message.scope` has no `skills` or `memory` (422). `enabled: false` on an
   `on_request` capability returns 422. Widening a list, or targeting a
   capability the thread lacks, returns 422 with a string `detail`. A malformed
@@ -226,8 +267,9 @@ easy to get wrong:
 - Filter ids and names are not validated on chats. A wrong id matches nothing.
 - No endpoint returns the capabilities frozen on a thread.
 - Legacy fields (`memory_namespace`, `disabled_tools`, `source_ids`,
-  `document_ids`) are deprecated on HTTP and removed from the SDK. Mixing them
-  with the new fields returns 422. The sanitize script sets `deprecated: true`.
+  `document_ids`) are deprecated on HTTP and removed from the Python SDK. The
+  JavaScript SDK still accepts them, deprecated. Mixing them with the new
+  fields returns 422 (`InvalidParams` in the JavaScript SDK). The sanitize script sets `deprecated: true`.
 - Where users find ids: `source_ids` on platform.cominty.ai/knowledge (the
   **ID** under each source name). `document_ids` are not shown yet: the docs tell
   users to ask an agent. MCP `connections` and skill `include` ids come from the
