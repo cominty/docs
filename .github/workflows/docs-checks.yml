@@ -28,6 +28,11 @@ jobs:
       - name: Check for broken links
         run: mint broken-links
 
+      - name: Check TypeScript/JavaScript code snippets parse cleanly
+        run: |
+          npm install --no-save --no-package-lock typescript@5.9.3
+          node scripts/check_ts_snippets.cjs
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

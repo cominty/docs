@@ -193,8 +193,8 @@ A message with no content, for example one that is still running, throws
 ## Give the agent files
 
 `chat.uploadFile` registers a file. Its `id` goes in `fileIds` on `chat.start`
-or `chat.send`, at most 5 files per message. Pass a `Blob` or a `File` (its name
-and type are used), or an `ArrayBuffer` or `Uint8Array` with a `filename`. In
+or `chat.send`, at most 5 files per message. Pass a `File` (its name and type
+are used), or a `Blob`, `ArrayBuffer`, or `Uint8Array` with a `filename`. In
 Node, open a path with `openAsBlob`. A string is rejected: it is ambiguous
 between a path and text.
 
@@ -421,7 +421,6 @@ const run = await client.chat.start({
 console.log(await run.text())
 
 agent = await client.agents.update(agent.id, { name: 'Helper v2', description: null })
-await client.agents.delete(agent.id)
 ```
 
 `update` is partial: `null` clears `description`, `instructions`, and
@@ -443,6 +442,8 @@ agent = await client.agents.setModels(agent.id, {
     modelIds: [models[1]!.id, models[0]!.id],
 })
 console.log(agent.models.map((model) => model.name))
+
+await client.agents.delete(agent.id)
 ```
 
 On a built-in agent, `setModels` changes the chain of the whole organization.

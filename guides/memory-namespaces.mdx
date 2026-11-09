@@ -31,9 +31,9 @@ Here `tone.md` exists twice. `("support-bot", "tone.md")` and
 `("sales-bot", "tone.md")` are two different files.
 
 - Namespaces are shared across your organization for your API key. They are
-  visible to every `user_id` that key acts for.
-- `user_id` plays no role in scoping memory. Two clients with the same key and
-  different `user_id` values see the same files.
+  visible to every user id that key acts for.
+- The user id plays no role in scoping memory. Two clients with the same key
+  and different user ids see the same files.
 - There is no call to create or delete a namespace. The first file you create
   in a new name brings it into existence. It disappears when its last file is
   deleted.
@@ -318,7 +318,7 @@ flowchart LR
 
 ## Files written before namespaces existed
 
-Memory used to be scoped to each `user_id`. Those files are kept. They now sit
+Memory used to be scoped to each user id. Those files are kept. They now sit
 in a namespace named `{user_id}::default`, one per former user. Pass that exact
 string as `namespace` to read them, or copy them to a namespace you choose.
 
@@ -331,7 +331,7 @@ no memory until you pass a `memory` capability.
   <Card title="API reference" icon="code" href="/api-reference">
     Memory endpoints, with a live playground.
   </Card>
-  <Card title="Python SDK reference" icon="book" href="/sdk/reference#clientmemory">
+  <Card title="Python SDK reference" icon="book" href="/sdk/reference#client-memory">
     Signatures and local validation rules for `client.memory`.
   </Card>
   <Card title="JavaScript SDK reference" icon="book" href="/js-sdk/reference#client-memory">

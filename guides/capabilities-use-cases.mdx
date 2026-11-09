@@ -490,8 +490,8 @@ capabilities back.
 **Starting point:** the example agent. `web` is `always`. This recipe removes it
 from the thread.
 
-This time the rule is for the whole thread. Use `thread_capabilities` with
-`activation="never"`.
+This time the rule is for the whole thread. Set the capability to `never` in
+the thread capabilities.
 
 <Tabs>
   <Tab title="Python SDK">
@@ -763,43 +763,91 @@ of the thread.
 
 A filter you leave out means no restriction. `ALL` says it explicitly.
 
-```python
-from cominty_sdk import ALL, McpCapability
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import ALL, McpCapability
 
-McpCapability(activation="always")                  # every connection
-McpCapability(activation="always", connections=ALL)  # same thing
-```
+    McpCapability(activation="always")                  # every connection
+    McpCapability(activation="always", connections=ALL)  # same thing
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { ALL, type McpCapability } from '@cominty-ai/sdk'
+
+    const everyConnection: McpCapability = { activation: 'always' }
+    const sameThing: McpCapability = { activation: 'always', connections: ALL }
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```json
+    {"mcp": {"activation": "always", "connections": "*"}}
+    ```
+
+    Leaving `connections` out is the same thing.
+  </Tab>
+</Tabs>
 
 Three values look like "no filter" but are errors. The Python SDK raises
 `InvalidParams` when you build the object. The JavaScript SDK, whose
 capabilities are plain objects, throws `InvalidParams` from `chat.start` or
 `chat.send`, before it sends anything:
 
-```python
-from cominty_sdk import InvalidParams, McpCapability
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import InvalidParams, McpCapability
 
-for bad in (None, [], ["*"]):
-    try:
-        McpCapability(activation="always", connections=bad)
-    except InvalidParams as exc:
-        print(exc)
-```
+    for bad in (None, [], ["*"]):
+        try:
+            McpCapability(activation="always", connections=bad)
+        except InvalidParams as exc:
+            print(exc)
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { InvalidParams } from '@cominty-ai/sdk'
+
+    for (const connections of [[], ['*']]) {
+        try {
+            await client.chat.start({
+                agentId: AGENT_ID,
+                message: 'Hello',
+                threadCapabilities: { mcp: { activation: 'always', connections } },
+            })
+        } catch (error) {
+            if (!(error instanceof InvalidParams)) throw error
+            console.log(error.message)
+        }
+    }
+    ```
+
+    In TypeScript, `connections: null` does not compile. In plain JavaScript, it
+    throws `InvalidParams` like the two others.
+  </Tab>
+  <Tab title="HTTP">
+    `null` and `[]` return 422. `["*"]` is not a wildcard: the API accepts it
+    as a list with one name, `*`, and no connection has that name.
+  </Tab>
+</Tabs>
 
 | Value | Why it is refused | What to pass instead |
 | ----- | ----------------- | -------------------- |
-| `None` (`null` in JavaScript) | Ambiguous | `ALL` for no restriction |
+| `None` in Python, `null` in JavaScript | Ambiguous | `ALL` for no restriction |
 | `[]` | An empty list is ambiguous | `ALL`, or turn the capability off |
 | `["*"]` | `"*"` inside a list is not a wildcard | `ALL` on its own |
 
-A filter together with `activation="never"` or `enabled=False` is also refused,
-because those states take no filter.
+A filter together with `never`, or with a scope whose `enabled` is false, is
+also refused, because those states take no filter.
 
 <Warning>
   A capability you pass replaces the agent's version of it entirely. If the
-  agent limits documents to two sources and you pass
-  `IndexedDocumentsCapability(activation="always", document_ids=[...])`, the
-  agent's `source_ids` are gone. Capabilities you do not pass keep the agent's
-  value: web stays on until you pass `WebCapability(activation="never")`. See
+  agent limits documents to two sources and you pass `indexed_documents` with
+  only `document_ids`, the agent's `source_ids` are gone. Capabilities you do
+  not pass keep the agent's value: web stays on until you pass `web` with
+  `never`. See
   [Override an agent for one thread](/guides/capabilities#override-an-agent-for-one-thread).
 </Warning>
 
@@ -886,11 +934,27 @@ id.
 
 To run a thread with no memory at all, even if the agent has a namespace:
 
-```python
-thread_capabilities=AgentCapabilities(
-    memory=MemoryCapability(activation="never"),
-)
-```
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    thread_capabilities=AgentCapabilities(
+        memory=MemoryCapability(activation="never"),
+    )
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const threadCapabilities: AgentCapabilities = { memory: { activation: 'never' } }
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    Send this object in `options.capabilities`:
+
+    ```json
+    {"memory": {"activation": "never"}}
+    ```
+  </Tab>
+</Tabs>
 
 ▶ [`examples/11_capabilities.py`](https://github.com/cominty/python-sdk/blob/main/examples/11_capabilities.py) ·
 [`examples/09_memory.py`](https://github.com/cominty/python-sdk/blob/main/examples/09_memory.py)
@@ -898,7 +962,7 @@ thread_capabilities=AgentCapabilities(
 **Expected behavior:** The agent has memory tools on this thread. It writes the
 preference to a file in the `customer-acme` namespace, and reads it back on the
 next message. A thread started for another customer uses a different namespace,
-so it cannot see this file. With `activation="never"`, the agent has no memory
+so it cannot see this file. With `never`, the agent has no memory
 tools and writes nothing, even if the agent normally has a namespace. A
 follow-up cannot change the namespace: start a new thread to use another one.
 

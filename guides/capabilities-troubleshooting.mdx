@@ -309,7 +309,7 @@ In the JavaScript SDK, `threadCapabilities` on `chat.send` throws
 ### Trying to change capabilities on `chat.send`
 
 The thread's capabilities are frozen when it starts. `chat.send` only accepts
-`message_scope`, which narrows one message. To use other capabilities, start a
+a message scope, which narrows one message. To use other capabilities, start a
 new thread.
 
 ### Using old and new fields together
@@ -320,7 +320,7 @@ exist. The JavaScript SDK still accepts them, deprecated, but throws
 `InvalidParams` when you mix them with the new ones. Move everything to the new
 ones.
 
-### Passing `True`, `False`, or a string
+### Passing a boolean or a string
 
 There are no shortcuts. `web=True`, `web="never"`, and `MessageScope(web=False)`
 all raise `InvalidParams`. Use `WebCapability(activation="never")` and
@@ -374,7 +374,7 @@ This is also true of `on_request`: it is off unless the message turns it on.
 
 ### Expecting the agent's `never` to be a lock
 
-`thread_capabilities` can turn on a capability that the agent sets to `never`. If
+The thread capabilities can turn on a capability that the agent sets to `never`. If
 you must keep a capability away from some callers, do not give them the API key
 of an agent that has it.
 

@@ -6,10 +6,19 @@ description: "Create and manage agents with an API key: capabilities, models, an
 An API key can create and manage agents, the same way an admin does on the
 **Agents** page of [platform.cominty.ai](https://platform.cominty.ai). A custom
 agent runs like [Hive](/guides/agents), with the capabilities, instructions, and
-models you give it. Pass its id as `agent_id` to any chat call.
+models you give it. Pass its id as the agent id of any chat call.
 
 This page works for the [Python SDK](/sdk/overview), the
 [JavaScript SDK](/js-sdk/overview), and HTTP. Each snippet has a tab for each.
+Both SDKs have the same methods on `client.agents`. The names that differ:
+
+| Name | Python SDK | JavaScript SDK | HTTP |
+| ---- | ---------- | -------------- | ---- |
+| Agent id of a chat | `agent_id` | `agentId` | `options.agent_id` on `POST /chat` |
+| List the models | `list_models` | `listModels` | `GET /agents/models` |
+| Set the model chain | `set_models` | `setModels` | `PUT /agents/{agent_pid}/models` |
+| Model ids | `model_ids` | `modelIds` | `model_ids` |
+| Override flag | `allow_execution_options_override` | `allowExecutionOptionsOverride` | `allow_execution_options_override` |
 
 ## What an API key can do
 
@@ -19,7 +28,7 @@ resource of this guide, and of [Skills](/guides/skills) and
 
 | The key can | The key cannot |
 | ----------- | -------------- |
-| Create agents and skills for the whole organization (`scope="organization"`) | See another member's **private** agents, skills, or drives. They are absent from lists, and a read by id returns 404. |
+| Create agents and skills for the whole organization (scope `organization`) | See another member's **private** agents, skills, or drives. They are absent from lists, and a read by id returns 404. |
 | Read the model catalog and set an agent's model chain | See agents created on the other product surface. A Platform key does not see Portal agents. |
 | Create sources from local files | Create a Google Drive or SharePoint source. They need the console's OAuth flow. |
 
@@ -66,14 +75,14 @@ An agent refers to integrations and models by id. Read them from the API.
   </Tab>
 </Tabs>
 
-- A server's `name` is the value to store in `McpCapability.connections`. The
-  default `mcp.list()` keeps only the integrations that are turned on. Pass
-  `enabled=None` (JavaScript: `{ enabled: null }`) to see every server. See
-  [`client.mcp`](/sdk/reference#client-mcp) and the
-  [JavaScript `client.mcp`](/js-sdk/reference#client-mcp).
-- `requires_oauth_connect` is `True` when someone must connect the integration
+- A server's `name` is the value to store in the `connections` of the MCP
+  capability. By default, `mcp.list()` keeps only the integrations that are
+  turned on. Set `enabled` to null to see every server. See `client.mcp` in the
+  [Python SDK](/sdk/reference#client-mcp) and
+  [JavaScript SDK](/js-sdk/reference#client-mcp) references.
+- `requires_oauth_connect` is true when someone must connect the integration
   with OAuth in the console first. See [MCP integrations](/mcp/overview).
-- A model's `id` goes in `model_ids` (JavaScript: `modelIds`).
+- A model's `id` goes in the agent's model chain.
 
 ## Create an agent
 
@@ -156,11 +165,11 @@ The reply is the full agent:
 - `scope` is `"private"` (the key owner only, the default) or
   `"organization"` (every member).
 - A capability you do not set gets its default, here `memory: never`. Over HTTP,
-  the capabilities you did not set come back as `null`. The SDK leaves them out.
-- Omit `model_ids` to use the organization's default model chain.
+  the capabilities you did not set come back as `null`. The SDKs leave them out.
+- Omit the model ids to use the organization's default model chain.
 - `capabilities.memory` sets the agent's memory namespace. The older
-  `execution_options` and `memory_namespace` fields are deprecated, and the SDK
-  does not expose them.
+  `execution_options` and `memory_namespace` fields are deprecated, and the SDKs
+  do not accept them.
 - Capabilities work as on a thread. See [Capabilities](/guides/capabilities).
   The agent's capabilities are the saved default of the first of the
   [three layers](/guides/capabilities#three-layers).
@@ -198,7 +207,7 @@ Use the id like any other agent.
 
 An MCP server is mounted on the agent as a sub-agent. The message's tool calls
 show a `subagent` call, not the integration's tool names. To turn MCP off for one
-message, use a `McpScope`. See
+message, send a message scope that sets `mcp` to `enabled` false. See
 [Keep some connections, or none](/guides/capabilities-use-cases#recipe-3-keep-some-connections-or-none).
 
 ## Update an agent
@@ -252,14 +261,13 @@ An update is partial: send only what you want to change.
   </Tab>
 </Tabs>
 
-- `None` (JavaScript and HTTP: `null`) clears `description`, `instructions`, and
-  `capabilities`.
+- A null value (`None` in Python, `null` in JavaScript and HTTP) clears
+  `description`, `instructions`, and `capabilities`.
 - `capabilities` is **merged capability by capability**. Each capability you
   send replaces the stored one, and the others stay. In the example, `web`
   changed and `mcp` was kept.
-- You cannot clear `name`, `scope`, or `allow_execution_options_override`. The
-  SDKs raise `InvalidParams` for `None` (JavaScript: `null`), and for an update
-  with no argument.
+- You cannot clear `name`, `scope`, or the override flag. The SDKs raise
+  `InvalidParams` for a null value there, and for an update with no argument.
 - An organization agent owned by someone else can be updated and deleted with the
   key.
 
@@ -299,12 +307,12 @@ when it fails.
 
 - An unknown id returns 404 with `detail` `Bad model_ids`. An empty list returns
   422. The SDKs raise `InvalidParams` for an empty list, before any request.
-- `create(model_ids=...)` sets the chain at creation. Omit it for the
+- The model ids on `create` set the chain at creation. Omit them for the
   organization's default chain.
 
 <Warning>
-  On a built-in agent, such as Chat or Hive, `set_models` changes the chain of
-  the whole organization for that agent. It affects every user. The built-in
+  On a built-in agent, such as Chat or Hive, setting the model chain changes it
+  for the whole organization. It affects every user. The built-in
   agents cannot be edited or deleted otherwise.
 </Warning>
 
@@ -348,7 +356,7 @@ their agent as `"ARCHIVED"`.
 | ------------- | --- | ---- |
 | Unknown agent, built-in agent on `update` or `delete`, another organization, or another member's private agent | `NotFoundError`, `detail` `Not Found` | 404 `Not Found` |
 | Unknown model id | `NotFoundError`, `detail` `Bad model_ids` | 404 `Bad model_ids` |
-| Empty `name`, `description` over 500 characters, `instructions` over 30000, empty `model_ids`, or an `update` with nothing to change | `InvalidParams`, before any request | 422 |
+| Empty `name`, `description` over 500 characters, `instructions` over 30000, empty model ids, or an `update` with nothing to change | `InvalidParams`, before any request | 422 |
 | `skills.include` names a skill the key cannot read | `APIError` (422) | 422 |
 | Delete twice | `NotFoundError` | 404 |
 

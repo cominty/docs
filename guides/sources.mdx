@@ -5,12 +5,21 @@ description: "Turn local files into an indexed source with an API key, give it t
 
 A source is a set of files that Cominty indexes, so an agent can search them and
 cite them. With an API key, you create a source from files on your machine. The
-SDK does it in one call. Read
+SDKs do it in one call. Read
 [Custom agents](/guides/custom-agents#what-an-api-key-can-do) first for what an
 API key can and cannot see.
 
 Each snippet has a tab for the [Python SDK](/sdk/overview), the
-[JavaScript SDK](/js-sdk/overview), and HTTP.
+[JavaScript SDK](/js-sdk/overview), and HTTP. Both SDKs have the same methods
+on `client.sources`. Only the casing of the longer names differs:
+
+| Action | Python SDK | JavaScript SDK | HTTP |
+| ------ | ---------- | -------------- | ---- |
+| Wait for a sync to end | `wait_synced` | `waitSynced` | Poll `GET /dc/sources` until `status` is `synced` |
+| Add files | `add_files` | `addFiles` | Upload to the source's drive, then `PUT /dc/sources/{pid}/status?operation=sync` |
+| Remove a file | `remove_file` | `removeFile` | `DELETE /files/{file_id}`, then the same sync |
+| List the files | `list_files` | `listFiles` | `GET /drives/{drive_id}` |
+| Download a file | `download_file` | `downloadFile` | `GET /files/{file_id}` |
 
 <Info>
   Only **drag-and-drop** sources can be created with a key. Google Drive and
@@ -41,9 +50,7 @@ flowchart TD
   Your files are not available to the agent as soon as the source is created and
   the upload ends. The platform must first index every file. Until the source
   is `synced`, the agent finds nothing, or only some of the files. Wait for
-  `synced` before you start a chat. With the SDKs, use `sources.wait_synced`
-  (JavaScript: `sources.waitSynced`). Over
-  HTTP, poll `GET /dc/sources` until `status` is `synced`.
+  `synced` before you start a chat. Each snippet below waits for it.
 </Warning>
 
 <Tabs>
@@ -140,9 +147,9 @@ flowchart TD
 }
 ```
 
-`files` can be one file `Path`, a folder `Path` (its top-level files only, no
-recursion, hidden files skipped), or an iterable of file `Path`s. The SDK refuses
-these before any upload with `InvalidParams`:
+In Python, `files` can be one file `Path`, a folder `Path` (its top-level files
+only, no recursion, hidden files skipped), or an iterable of file `Path`s. The
+SDK refuses these before any upload with `InvalidParams`:
 
 - a plain `str`: wrap a path in `Path(...)`;
 - an empty list, or a file that does not exist;
@@ -164,21 +171,22 @@ A source has two ids. Do not mix them up.
 
 | Field | Type | Where it goes |
 | ----- | ---- | ------------- |
-| `source.pid` | `str` | Every `client.sources` method, and every HTTP path |
-| `source.id` | `int` | `IndexedDocumentsCapability(source_ids=[...])` and `IndexedDocumentsScope(source_ids=[...])`. In JavaScript, `indexedDocuments: { sourceIds: [...] }`. |
+| `source.pid` | String | Every `client.sources` method, and every HTTP path |
+| `source.id` | Number | The source filter of the `indexed_documents` capability and scope. See [Filters](/guides/capabilities#filters). |
 
 ### Wait for the sync
 
-`wait_synced(pid, *, timeout=600.0, interval=5.0)` polls the source every
-`interval` seconds. In JavaScript, `waitSynced(pid, { timeout, interval })`
-takes milliseconds, with defaults of `600_000` and `5_000`.
+The wait method polls the source until it is `synced`. By default, it gives up
+after 10 minutes and polls every 5 seconds. The Python SDK takes seconds
+(`timeout=600.0, interval=5.0`). The JavaScript SDK takes milliseconds
+(`{ timeout: 600_000, interval: 5_000 }`).
 
 | Status it sees | What it does |
 | -------------- | ------------ |
-| `synced` | Returns the `SourceOut` |
+| `synced` | Returns the source |
 | `pending`, `syncing`, `out_of_sync`, `cancelling`, `pausing` | Keeps polling |
-| Anything else (`error`, `paused`, `archived`, `daily_quota_reached`, `invalid_configuration`, ...) | Raises `SourceSyncFailed`. The source as last read is `exc.source` (JavaScript: `error.source`). |
-| Still in progress after `timeout` | Raises `asyncio.TimeoutError`. JavaScript throws `SourceSyncTimeout`, with the last read in `error.source` (`null` if no read finished). |
+| Anything else (`error`, `paused`, `archived`, `daily_quota_reached`, `invalid_configuration`, ...) | Fails with `SourceSyncFailed`. Its `source` holds the source as last read. |
+| Still in progress after the timeout | Fails with `asyncio.TimeoutError` in Python, and with `SourceSyncTimeout` in JavaScript. `SourceSyncTimeout` holds the last read in `source` (`null` if no read finished). |
 
 <Tabs>
   <Tab title="Python SDK">
@@ -269,16 +277,15 @@ Put the source's number `id` in an `IndexedDocumentsCapability`.
   </Tab>
 </Tabs>
 
-You can also pass the source in `thread_capabilities` (JavaScript:
-`threadCapabilities`) on `chat.start`, or narrow
-it for one message with `IndexedDocumentsScope`. See
+You can also pass the source in the thread capabilities on `chat.start`, or
+narrow it for one message with the message scope. See
 [Capabilities](/guides/capabilities#find-your-ids).
 
 ### Chat as the key owner
 
 A source created with a key is **private to the key owner**. A chat that searches
-it must run with the owner's id as `user_id`. The owner is `agent.owner` on any
-agent the key created.
+it must run as the owner: create the client with the owner's id as its user id.
+The owner is `agent.owner` on any agent the key created.
 
 <Tabs>
   <Tab title="Python SDK">
@@ -313,7 +320,7 @@ agent the key created.
   </Tab>
 </Tabs>
 
-With any other `user_id`, the agent's document tool reports `You have no
+With any other user id, the agent's document tool reports `You have no
 authorized document sources.` The agent then says it found nothing. The
 `COMINTY_USER_ID` of your client may not be the key owner, so read `agent.owner`.
 
@@ -366,11 +373,10 @@ Resolve it to its source and file:
 ```
 
 - An unknown id raises `NotFoundError` (404). There is no call that lists
-  documents. An empty id raises `ValueError` (JavaScript: `InvalidParams`)
-  before any request.
-- `document_uri` can be `None` (JavaScript: `null`). For a drag-and-drop source,
-  it ends with the id of the file, the one `sources.download_file` (JavaScript:
-  `sources.downloadFile`) takes.
+  documents. An empty id is refused before any request (`ValueError` in
+  Python, `InvalidParams` in JavaScript).
+- `document_uri` can be null. For a drag-and-drop source, it ends with the id
+  of the file, the one the download method takes.
 
 To read the original file, list the source's files and download one:
 
@@ -404,14 +410,14 @@ To read the original file, list the source's files and download one:
   </Tab>
 </Tabs>
 
-`download_file` (JavaScript: `downloadFile`) fetches the presigned URL for you, without sending the key. It
-holds the whole file in memory.
+The SDKs fetch the presigned URL for you, without sending the key. They hold the
+whole file in memory.
 
 ## Keep a source up to date
 
 <Note>
-  New files follow the same rule. After `add_files` or `remove_file`, the source
-  is indexed again, and the change reaches the agent only once the source is
+  New files follow the same rule. After you add or remove a file, the source is
+  indexed again, and the change reaches the agent only once the source is
   `synced` again.
 </Note>
 
@@ -421,11 +427,11 @@ holds the whole file in memory.
     added = await client.sources.add_files(source.pid, [Path("extra.csv")])
     source = await client.sources.wait_synced(source.pid)
     await client.sources.remove_file(source.pid, added[0].id)
+    source = await client.sources.wait_synced(source.pid)
     source = await client.sources.update(source.pid, name="Product docs (2026)")
 
     source = await client.sources.sync(source.pid)     # force a sync now
-    source = await client.sources.pause(source.pid)    # cancels a running sync
-    source = await client.sources.start(source.pid)    # only from paused
+    source = await client.sources.pause(source.pid)    # cancels the running sync
     source = await client.sources.archive(source.pid)  # terminal
     ```
   </Tab>
@@ -438,11 +444,11 @@ holds the whole file in memory.
     ])
     source = await client.sources.waitSynced(source.pid)
     await client.sources.removeFile(source.pid, added[0]!.id)
+    source = await client.sources.waitSynced(source.pid)
     source = await client.sources.update(source.pid, { name: 'Product docs (2026)' })
 
     source = await client.sources.sync(source.pid)    // force a sync now
-    source = await client.sources.pause(source.pid)   // cancels a running sync
-    source = await client.sources.start(source.pid)   // only from paused
+    source = await client.sources.pause(source.pid)   // cancels the running sync
     source = await client.sources.archive(source.pid) // terminal
     ```
   </Tab>
@@ -456,12 +462,13 @@ holds the whole file in memory.
   </Tab>
 </Tabs>
 
-- `add_files` uploads into the source's drive, then requests a sync if the
-  source's status accepts one. If a sync is already running, the new files are
-  left for it or for the daily sync. The limit of 50 files counts the files
-  already in the source.
-- `remove_file` deletes the file, then requests a sync under the same rule. An
-  empty `file_id` raises `ValueError` (JavaScript: `InvalidParams`).
+- **Adding files** uploads them into the source's drive, then requests a sync
+  if the source's status accepts one. If a sync is already running, the new
+  files are left for it or for the daily sync. The limit of 50 files counts the
+  files already in the source.
+- **Removing a file** deletes it, then requests a sync under the same rule. An
+  empty file id is refused before any request (`ValueError` in Python,
+  `InvalidParams` in JavaScript).
 - `update` only changes the name. The drive of a drag-and-drop source cannot
   change.
 - `list()` returns the key owner's sources and the organization's sources,
@@ -478,6 +485,10 @@ Each operation is valid from some statuses only. Any other combination is an
 | `sync` | `synced`, `error`, `out_of_sync`, `daily_quota_reached` |
 | `archive` | Any status but `archived` |
 
+`pause` returns the source as `pausing`. It reaches `paused` a moment later, and
+only then does `start` resume it. A `start` while the source is still `pausing`
+fails with the same 400.
+
 <Warning>
   `archive` removes the indexed documents and the files. The source stays in the
   list with `status` `archived`. There is no delete, and no way back.
@@ -487,7 +498,7 @@ Each operation is valid from some statuses only. Any other combination is an
 
 - A source holds at most **50 files**. The SDK checks it before it uploads.
 - A user has at most **100 drives**. Each `sources.create` makes one, and a drive
-  cannot be deleted. Reuse a source and call `add_files` instead of creating a
+  cannot be deleted. Reuse a source and add files to it instead of creating a
   new one for every batch.
 - A presigned download URL is valid for 5 minutes.
 - Uploads go straight to storage. The API key never reaches the storage host,
@@ -523,12 +534,13 @@ apply today:
   documents of a source, spreadsheets included, and open one by its document
   id. It then reads the content extracted from the spreadsheet, as long as it is
   not too large. For a large spreadsheet, or to work on its data, attach the
-  file to the chat with [`chat.upload_file`](/sdk/reference#client-chat)
-  (JavaScript: [`chat.uploadFile`](/js-sdk/reference#client-chat)) instead.
+  file to the chat instead, with the upload method of the
+  [Python SDK](/sdk/reference#client-chat) or the
+  [JavaScript SDK](/js-sdk/reference#client-chat).
 - **The agent cannot download the raw file.** It reads the indexed content, but it
   cannot fetch the original file to transform it, for example to edit a
-  document or to compute on a spreadsheet. To get the original, use
-  `sources.download_file` (JavaScript: `sources.downloadFile`) from your own code.
+  document or to compute on a spreadsheet. To get the original, download it
+  from your own code, as in [Read a citation](#read-a-citation).
 
 ## Next steps
 

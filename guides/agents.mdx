@@ -4,9 +4,9 @@ description: "What Chat, Hive, and Planner can do by default, and which one to p
 ---
 
 Every organization has three built-in agents, ready to use without any setup.
-Pass their id as `agent_id` (`agentId` in JavaScript).
+Pass their id as the agent id of a chat.
 
-| Agent | `agent_id` | Pick it to |
+| Agent | Id | Pick it to |
 | ----- | ---------- | ---------- |
 | Chat | `__cominty_agents::agent.chat` | Get quick, direct answers |
 | Hive | `__cominty_agents::agent.hive` | Run longer, multi-step work |
@@ -36,8 +36,8 @@ with no filter. Nothing is `on_request` by default.
 | `music_generation` | `always` | Music generation on every message |
 | `memory` | Off | No namespace, so no memory until you set one |
 
-To change a default for one thread, pass that capability in
-`thread_capabilities` (`threadCapabilities` in JavaScript). For example, to
+To change a default for one thread, pass that capability in the
+[thread capabilities](/guides/capabilities). For example, to
 search the web only on the messages that ask for it:
 
 <Tabs>
@@ -111,16 +111,16 @@ and a sandbox, such as Hive.
   no sandbox. It cannot check a fact or open a document.
 - **No files.** The API accepts `file_ids`, but Planner never receives them. Put
   what matters from the file in your message.
-- **Capabilities change nothing.** `thread_capabilities` and `message_scope` are
+- **Capabilities change nothing.** Thread capabilities and message scopes are
   accepted and checked, but Planner ignores them. Memory is the one exception:
   with a namespace, Planner can read and write memory files.
 
 ### Get the plan
 
 The plan is not the reply text. The reply text is Planner's message to you. The
-plan is in `structured_output["canvas"]` on the reply.
+plan is in the `canvas` key of the reply's `structured_output`.
 
-`canvas` is `None` (`null` in JavaScript) on a reply where Planner did not
+`canvas` is null on a reply where Planner did not
 write or change the plan, for example when it only asked questions. Keep the
 last plan you received.
 
