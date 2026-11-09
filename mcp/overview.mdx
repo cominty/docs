@@ -9,15 +9,15 @@ single **MCP hub** at `https://mcp.cominty.com`.
 
 Once an integration is connected to an agent, its tools are available to that
 agent. You do not change any code. You can turn them off for one message with a
-`McpScope`, keep only some connections, or fix the list for a whole thread with
-`McpCapability(connections=...)`. See [Capabilities](/guides/capabilities) and
+scope, keep only some connections, or fix the list for a whole thread with the
+`mcp` capability and its `connections`. See [Capabilities](/guides/capabilities) and
 the [use case on connections](/guides/capabilities-use-cases#recipe-3-keep-some-connections-or-none).
 
 ## List the integrations from code
 
 With an API key, `client.mcp.list()` returns the integrations you can use. A
-server's `name` is the value to put in `McpCapability.connections` (Python) or
-`mcp.connections` (JavaScript).
+server's `name` is the value to put in the `connections` of the MCP
+capability.
 
 <Tabs>
   <Tab title="Python SDK">
@@ -41,7 +41,7 @@ server's `name` is the value to put in `McpCapability.connections` (Python) or
   </Tab>
 </Tabs>
 
-`requires_oauth_connect` is `True` (`true` in JavaScript) when someone must connect the integration with
+`requires_oauth_connect` is true when someone must connect the integration with
 OAuth on the platform first. The call does not connect anything. To create an
 agent that uses a server, see [Custom agents](/guides/custom-agents). Over HTTP,
 the call is `GET /mcp/manifest`.

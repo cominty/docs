@@ -243,26 +243,26 @@ read makes the creation fail with 422. For the other ways to narrow skills, see
 </Tabs>
 
 - `list` returns the built-in Cominty skills (`source` is `"cominty"`, `scope` is
-  `None`, or `null` in JavaScript, read-only), the organization skills, and the key owner's skills. A
+  null, read-only), the organization skills, and the key owner's skills. A
   private skill of another member is not there.
-- `update` sends only the fields you pass: `display_name` (JavaScript:
-  `displayName`), `active`, and `scope`. Passing none raises `InvalidParams`. `active=False` keeps the skill,
-  and agents stop using it.
-- `upload_version` (JavaScript: `uploadVersion`) makes the new version the default. `frontmatter` and
-  `updated_at` then describe it. Versions are tagged to the second: two uploads
-  of one skill within a second collide and return 500. Space them out.
+- `update` sends only the fields you pass: the display name, `active`, and
+  `scope`. Passing none raises `InvalidParams`. With `active` set to false, the
+  skill stays, and agents stop using it.
+- An uploaded version becomes the default. `frontmatter` and `updated_at` then
+  describe it. Versions are tagged to the second: two uploads of one skill
+  within a second collide and return 500. Space them out.
 - `delete` is permanent and removes every version. HTTP answers 200 with a
   `null` body.
-- A built-in skill, and a skill the key owner does not own, return 404 on
-  `update`, `upload_version`, and `delete`.
+- A built-in skill, and a skill the key owner does not own, return 404 when you
+  update it, upload a version of it, or delete it.
 
 ## Limits and errors
 
 | What happened | SDK | HTTP |
 | ------------- | --- | ---- |
-| `display_name` is empty or over 100 characters | `InvalidParams`, before any request | 422 over 100 characters |
+| The display name is empty or over 100 characters | `InvalidParams`, before any request | 422 over 100 characters |
 | The archive is over 30 MB | `InvalidParams`, before any request | 413 |
-| The folder (JavaScript: the files object) has no `SKILL.md`, or the input is a string | `InvalidParams`, before any request | - |
+| The folder (Python) or the files object (JavaScript) has no `SKILL.md`, or the input is a string | `InvalidParams`, before any request | - |
 | The zip layout or the frontmatter is wrong | `APIError` (422) | 422 |
 | The file cannot be read | `OSError` (Python) | - |
 | Unknown skill, or a built-in one, on `update` or `delete` | `NotFoundError` | 404 |

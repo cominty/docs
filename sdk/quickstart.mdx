@@ -423,7 +423,6 @@ run = await client.chat.start(
 print(await run.text())
 
 agent = await client.agents.update(agent.id, name="Helper v2", description=None)
-await client.agents.delete(agent.id)
 ```
 
 `update` is partial: `None` clears `description`, `instructions`, and
@@ -443,6 +442,8 @@ agent = await client.agents.set_models(
     agent.id, model_ids=[models[1].id, models[0].id]
 )
 print([model.name for model in agent.models])
+
+await client.agents.delete(agent.id)
 ```
 
 On a built-in agent, `set_models` changes the chain of the whole organization.

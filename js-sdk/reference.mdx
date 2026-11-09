@@ -38,7 +38,9 @@ new Cominty({
   are configuration mistakes to fix.
 - The client holds no persistent connection. `client.close()` aborts every
   request and stream in flight. `await using client = new Cominty()` calls it
-  when the client goes out of scope.
+  when the client goes out of scope. A closed client stays closed: every later
+  call throws `APIConnectionError` (`client closed`). Create a new client to
+  continue.
 - Properties: `client.userId`, `client.baseUrl`.
 - Resources: `client.chat`, `client.threads`, `client.memory`, `client.mcp`,
   `client.agents`, `client.skills`, `client.sources`, `client.documents`. The
@@ -445,6 +447,7 @@ way).
 | `run.thread` | the `Thread` (`StartedChat` only; `undefined` on a bare `AssistantRun`) |
 | `run.lastEventId` | the id of the last event received, to [resume a dropped stream](#resume-a-dropped-stream) |
 | `await run.close()` | release the stream early. It does **not** stop the message: see [One message at a time](#one-message-at-a-time) |
+| `await using run = await client.chat.start(...)` | calls `run.close()` when `run` goes out of scope. Same rule: the message keeps running |
 
 | You did | Then `run.result()` / `run.text()` |
 | ------- | ---------------------------------- |
@@ -473,7 +476,7 @@ time`).
 | You read it to the end: `await run.result()`, `await run.text()`, or a `for await` that ran to the end | Works |
 | You cancelled it with [`chat.cancel`](#stop-a-message), even without reading its events | Works |
 | You dropped the run, or left the `for await` early, and did not cancel | **400**, the message is still pending |
-| You called `run.close()`, aborted its `signal`, or called `client.close()`, and did not cancel | **400**: closing the stream does not stop the message |
+| You called `run.close()`, left an `await using run` block, aborted its `signal`, or called `client.close()`, and did not cancel | **400**: closing the stream does not stop the message |
 
 Leaving a stream early only releases the connection. The message keeps running
 on the server. To stop reading and free the thread, cancel:
@@ -665,8 +668,7 @@ forward-compatible. Timestamps are ISO-8601 strings.
 <ResponseField name="Source" type="object">
   Returned by the `client.sources` methods that return a source. `id: number`
   (for `sourceIds`) · `pid: string` (for every `client.sources` method) ·
-  `name: string` · `scope: Scope` · `created_by: string` ·
-  `store: 'draganddrop' | 'googledrive' | 'sharepoint'` ·
+  `name: string` · `scope: Scope` · `created_by: string` · `store: SourceStore` ·
   `status: SourceStatus` · `size: number` · `embedded_size: number` ·
   `documents_synced: number` · `documents_failed: number` ·
   `oversized_documents: number` · `documents_embedded: number` ·
@@ -690,6 +692,11 @@ forward-compatible. Timestamps are ISO-8601 strings.
 <ResponseField name="Scope" type="string union">
   `'private'` (the key owner only) or `'organization'` (every member). Used by
   agents, skills, and sources.
+</ResponseField>
+
+<ResponseField name="SourceStore" type="string union">
+  `'draganddrop'`, `'googledrive'`, or `'sharepoint'`. An API key can only
+  create `draganddrop` sources.
 </ResponseField>
 
 <ResponseField name="SourceStatus" type="string union">

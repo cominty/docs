@@ -11,10 +11,15 @@ your code, without creating a new agent each time.
 You control them at three levels:
 
 - The **agent** saves default capabilities on the platform.
-- `thread_capabilities` sets what the thread has. It is frozen when the thread
-  starts.
-- `message_scope` focuses one message. It turns a capability on or off, or
-  narrows what it can reach, for that message only.
+- The **thread capabilities** set what the thread has. They are frozen when the
+  thread starts.
+- The **message scope** focuses one message. It turns a capability on or off,
+  or narrows what it can reach, for that message only.
+
+| Level | Python SDK | JavaScript SDK | HTTP |
+| ----- | ---------- | -------------- | ---- |
+| Thread | `thread_capabilities` | `threadCapabilities` | `options.capabilities` |
+| Message | `message_scope` | `messageScope` | `message.scope` |
 
 Keep one rule in mind: **capabilities give the thread its tools, and a scope
 focuses one message.** A scope never adds a tool that the thread does not have.
@@ -38,6 +43,12 @@ This guide explains the model. To see it in action, start with the
 | `music_generation` | Generate music | `always`, `on_request`, `never` | None |
 | `memory` | Read and write memory files in a namespace | `always`, `never` | `namespace` |
 
+The table uses the API's names, and the Python SDK uses the same ones. The
+JavaScript SDK writes them in camelCase: `indexedDocuments`, `imageGeneration`,
+`videoGeneration`, `musicGeneration`, `sourceIds`, and `documentIds`.
+`connections`, `include`, and `namespace` keep their names. A snake_case key
+throws `InvalidParams` in JavaScript.
+
 Skills and memory have no `on_request` mode. Neither has a per-message scope.
 Set them on the agent or when the thread starts.
 
@@ -48,16 +59,16 @@ narrowest.
 
 ```mermaid
 flowchart TD
-  agent["Agent: capabilities saved on the platform"] --> thread["Thread: thread_capabilities, frozen at start"]
-  thread --> message["Message: message_scope, one message only"]
+  agent["Agent: capabilities saved on the platform"] --> thread["Thread: thread capabilities, frozen at start"]
+  thread --> message["Message: message scope, one message only"]
   message --> run["What the agent can use for this message"]
 ```
 
 | Layer | Where you set it | Lasts | Can do |
 | ----- | ---------------- | ----- | ------ |
 | Agent | [platform.cominty.ai](https://platform.cominty.ai), **Agents** page, or `agents.create` with an API key ([Custom agents](/guides/custom-agents)) | Until you edit the agent | Define the defaults |
-| Thread | `thread_capabilities` on `chat.start` | The whole thread | Override the agent, capability by capability |
-| Message | `message_scope` on `chat.start` and `chat.send` | One message | Turn off, turn on, or narrow. Never widen |
+| Thread | The thread capabilities, on `chat.start` | The whole thread | Override the agent, capability by capability |
+| Message | The message scope, on `chat.start` and `chat.send` | One message | Turn off, turn on, or narrow. Never widen |
 
 <Note>
   An agent with no capabilities saved behaves as if every capability were
@@ -74,12 +85,12 @@ flowchart TD
 ### The agent is a saved default
 
 An agent's capabilities are a preset. Each thread copies them when it starts.
-You could pass the same `thread_capabilities` on every `chat.start` and get the
+You could pass the same thread capabilities on every `chat.start` and get the
 same threads. The agent saves you from sending them each time.
 
 ### Capabilities give tools, scopes focus
 
-Capabilities, from the agent or from `thread_capabilities`, decide which tools
+Capabilities, from the agent or from the thread capabilities, decide which tools
 the thread has. A capability the thread has is installed: its tools and their
 instructions are in the agent's system prompt, on every message. With `never`,
 the capability is not installed at all.
@@ -199,9 +210,9 @@ explicit object. There are no shortcuts such as `web=True` or
   </Tab>
 </Tabs>
 
-The follow-up `chat.send` does not accept `thread_capabilities` (in the
-JavaScript SDK, `threadCapabilities` on `chat.send` throws `InvalidParams`). To
-change the thread's capabilities, start a new thread.
+The follow-up `chat.send` does not accept thread capabilities. The Python SDK
+raises `TypeError`, the JavaScript SDK throws `InvalidParams`, and the API
+returns 422. To change the thread's capabilities, start a new thread.
 
 <Note>
   A thread handles one message at a time. Read the reply to the end (or cancel
@@ -213,8 +224,8 @@ change the thread's capabilities, start a new thread.
 
 ## Change one message
 
-`message_scope` takes a scope object for each capability you want to change on
-this message. Each scope has a required `enabled`.
+The message scope takes a scope object for each capability you want to change
+on this message. Each scope has a required `enabled`.
 
 <Tabs>
   <Tab title="Python SDK">
@@ -256,7 +267,7 @@ this message. Each scope has a required `enabled`.
 
 What a scope does depends on how the thread installed the capability:
 
-| Thread activation | `enabled=True` | `enabled=False` | No scope |
+| Thread activation | `enabled` true | `enabled` false | No scope |
 | ----------------- | -------------- | --------------- | -------- |
 | `always` | On | Off for this message | On |
 | `on_request` | On for this message | Rejected (422): it is already off | Off |
@@ -271,27 +282,48 @@ message what you want it to use. See
 
 ## Filters
 
-Some capabilities can be limited to a list of ids. The filter names are
-`source_ids` and `document_ids` for documents, `connections` for MCP, and
-`include` for skills.
+Some capabilities can be limited to a list of ids: documents by source or by
+document, MCP by connection, and skills by skill. The
+[capabilities table](#the-capabilities) gives the filter names.
 
 - A filter defaults to `ALL`, the string `"*"`, which means no restriction.
-  Passing `ALL` explicitly is the same as leaving the filter out.
+  Passing `ALL` explicitly is the same as leaving the filter out. Both SDKs
+  export `ALL`.
 - Otherwise a filter is a non-empty list.
 - On a message, a filter can only **narrow** the thread's list. It must be a
   subset of it.
-- `None` (`null` in JavaScript), an empty list, and `"*"` inside a list are
-  invalid. Both SDKs raise `InvalidParams` before sending anything.
-- A filter on `never` or on `enabled=False` is invalid too. Those states take
-  no filter.
+- A null value (`None` in Python, `null` in JavaScript), an empty list, and
+  `"*"` inside a list are invalid. Both SDKs raise `InvalidParams` before sending anything.
+- A filter on `never`, or on a scope with `enabled` set to false, is invalid
+  too. Those states take no filter.
 
-```python
-from cominty_sdk import ALL, IndexedDocumentsCapability
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import ALL, IndexedDocumentsCapability
 
-IndexedDocumentsCapability(activation="always")                      # no filter
-IndexedDocumentsCapability(activation="always", source_ids=ALL)      # same thing
-IndexedDocumentsCapability(activation="always", source_ids=[2292])   # one source
-```
+    IndexedDocumentsCapability(activation="always")                      # no filter
+    IndexedDocumentsCapability(activation="always", source_ids=ALL)      # same thing
+    IndexedDocumentsCapability(activation="always", source_ids=[2292])   # one source
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import { ALL, type IndexedDocumentsCapability } from '@cominty-ai/sdk'
+
+    const noFilter: IndexedDocumentsCapability = { activation: 'always' }
+    const sameThing: IndexedDocumentsCapability = { activation: 'always', sourceIds: ALL }
+    const oneSource: IndexedDocumentsCapability = { activation: 'always', sourceIds: [2292] }
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```json
+    {"indexed_documents": {"activation": "always", "source_ids": [2292]}}
+    ```
+
+    Leave `source_ids` out, or send `"source_ids": "*"`, for no filter.
+  </Tab>
+</Tabs>
 
 For documents, sending one filter on a message replaces both. A scope with only
 `document_ids` focuses the message on those documents and drops the thread's
@@ -448,12 +480,12 @@ does. Send both, so the agent knows where to look and cannot look elsewhere.
 
 An agent's own capabilities are set on
 [platform.cominty.ai](https://platform.cominty.ai), on the **Agents** page. They
-are the defaults for every thread started with that agent. `thread_capabilities`
-and `message_scope` start from there.
+are the defaults for every thread started with that agent. The thread
+capabilities and the message scope start from there.
 
 ## Override an agent for one thread
 
-`thread_capabilities` follows two rules:
+The thread capabilities follow two rules:
 
 1. **The set of capabilities is merged.** A capability you pass is added to the
    agent's set, or replaces the agent's version. A capability you do not pass
@@ -461,7 +493,8 @@ and `message_scope` start from there.
 2. **Each capability you pass is replaced entirely.** Its filters do not merge
    with the agent's. A filter you leave out goes back to `ALL`.
 
-The examples below start from this agent:
+The examples below show only the thread capabilities. They start from this
+agent:
 
 | Capability | On the agent |
 | ---------- | ------------ |
@@ -472,20 +505,52 @@ The examples below start from this agent:
 
 ### Add a capability
 
-```python
-thread_capabilities=AgentCapabilities(
-    skills=SkillsCapability(activation="always"),
-)
-```
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    thread_capabilities=AgentCapabilities(
+        skills=SkillsCapability(activation="always"),
+    )
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import type { AgentCapabilities } from '@cominty-ai/sdk'
+
+    const threadCapabilities: AgentCapabilities = {
+        skills: { activation: 'always' },
+    }
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```json
+    {"skills": {"activation": "always"}}
+    ```
+  </Tab>
+</Tabs>
 
 The thread has web search, document search on source `2292`, image
 generation, and skills. You added skills. The rest comes from the agent.
 
 ### Remove a capability
 
-```python
-thread_capabilities=AgentCapabilities(web=WebCapability(activation="never"))
-```
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    thread_capabilities=AgentCapabilities(web=WebCapability(activation="never"))
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const threadCapabilities: AgentCapabilities = { web: { activation: 'never' } }
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```json
+    {"web": {"activation": "never"}}
+    ```
+  </Tab>
+</Tabs>
 
 The thread has no web search, on any message, and no scope can bring it back.
 Documents and image generation keep the agent's values. Leaving `web` out never
@@ -493,11 +558,27 @@ turns it off: you have to send `never`.
 
 ### Redefine a capability
 
-```python
-thread_capabilities=AgentCapabilities(
-    indexed_documents=IndexedDocumentsCapability(activation="on_request"),
-)
-```
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    thread_capabilities=AgentCapabilities(
+        indexed_documents=IndexedDocumentsCapability(activation="on_request"),
+    )
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const threadCapabilities: AgentCapabilities = {
+        indexedDocuments: { activation: 'on_request' },
+    }
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```json
+    {"indexed_documents": {"activation": "on_request"}}
+    ```
+  </Tab>
+</Tabs>
 
 | Capability | On the thread | Why |
 | ---------- | ------------- | --- |
@@ -508,16 +589,32 @@ thread_capabilities=AgentCapabilities(
 You only meant to change the activation, but the thread can now search every
 source. To keep the agent's source, repeat it in the new object:
 
-```python
-IndexedDocumentsCapability(activation="on_request", source_ids=[2292])
-```
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    IndexedDocumentsCapability(activation="on_request", source_ids=[2292])
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    const threadCapabilities: AgentCapabilities = {
+        indexedDocuments: { activation: 'on_request', sourceIds: [2292] },
+    }
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```json
+    {"indexed_documents": {"activation": "on_request", "source_ids": [2292]}}
+    ```
+  </Tab>
+</Tabs>
 
 This is what lets you remove a source. If filters merged with the agent's, a
 thread could add sources but never take one away. Instead, you send the list you
 want, and the thread uses that list.
 
 <Warning>
-  `thread_capabilities` can turn on a capability that the agent sets to
+  The thread capabilities can turn on a capability that the agent sets to
   `never`. Do not rely on `never` on the agent to keep a capability away from
   callers who can start a chat with it.
 </Warning>
@@ -527,17 +624,35 @@ want, and the thread uses that list.
 Memory is a capability like the others. It decides which memory namespace the
 thread reads and writes.
 
-```python
-from cominty_sdk import AgentCapabilities, MemoryCapability
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from cominty_sdk import AgentCapabilities, MemoryCapability
 
-thread_capabilities=AgentCapabilities(
-    memory=MemoryCapability(activation="always", namespace="support-bot"),
-)
-```
+    thread_capabilities=AgentCapabilities(
+        memory=MemoryCapability(activation="always", namespace="support-bot"),
+    )
+    ```
+  </Tab>
+  <Tab title="JavaScript SDK">
+    ```ts
+    import type { AgentCapabilities } from '@cominty-ai/sdk'
 
-- `activation="always"` needs a `namespace` of 1 to 128 characters.
-- `activation="never"` runs the thread without memory, even if the agent has a
-  namespace. It takes no namespace.
+    const threadCapabilities: AgentCapabilities = {
+        memory: { activation: 'always', namespace: 'support-bot' },
+    }
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```json
+    {"memory": {"activation": "always", "namespace": "support-bot"}}
+    ```
+  </Tab>
+</Tabs>
+
+- `always` needs a `namespace` of 1 to 128 characters.
+- `never` runs the thread without memory, even if the agent has a namespace.
+  It takes no namespace.
 - Without a `memory` entry, the thread uses the agent's namespace. If the agent
   has none, the thread runs without memory.
 - The namespace is frozen for the thread. A follow-up cannot change it.
@@ -550,7 +665,7 @@ See [Memory namespaces](/guides/memory-namespaces) for the files themselves.
   thread was started with. Keep what you sent if you need to show it.
 - **Editing an agent does not change existing threads.** A thread keeps the
   capabilities it started with. Start a new thread to pick up the change.
-- **A follow-up cannot change the agent's capabilities.** Changing `agent_id` on
+- **A follow-up cannot change the agent's capabilities.** Changing the agent id on
   `chat.send` does not change the thread's capabilities either.
 - **A message can only narrow.** Widening a filter, or targeting a capability
   the thread does not have, returns a 422.
